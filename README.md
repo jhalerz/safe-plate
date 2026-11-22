@@ -49,8 +49,11 @@ Google provides the restaurants and reviews, which the app scans for "celiac," "
 ## How to use it
 
 - **Find:** Tap *Near me* or type a place. Results come from Google Maps, numbered to match the map, and are ranked by gluten-free signals in reviews (dedicated GF, celiac, allergy-friendly), with minus points for reported reactions or cross-contact. Each restaurant has one-tap links to its website, menu search, allergen-guide search, **Find Me Gluten Free**, **Reddit**, directions and phone number.
+- **Recipes tab:** Search The Loopy Whisk (and any other recipe sites you add) for things like "bread" or "pizza crust". Tap Vegan, Egg-free or Dairy-free to narrow it, and leave **Exclude my allergens** on to drop pages that mention nuts, soy, peas, chickpeas, beans or lentils (strict: it also drops recipes that only mention a swap). Results open on the original site.
+- **My recipe box:** Save a recipe's link and paste its ingredient list; the app flags anything on your avoid list (red = contains, amber = check the brand). Gluten-free flour blends, chocolate and protein powders get an amber "check" because they can hide soy, pea or bean. Recipes are included in shortlist backups.
 - **Copy for Claude** on any restaurant copies a research request for just that place. Paste it into the *Celiac & Allergy Restaurant Finder* project in Claude for a free AI summary of its menu, allergen info, reviews, Reddit and Find Me Gluten Free.
 - **Filters:** *Open now only* hides closed places, and *Hide cuisines heavy in soy, beans or chickpeas* hides Japanese, Chinese, Thai, Korean, Indian, Middle Eastern, Mexican and vegan spots. Changing a filter doesn't use another Google search.
+- **Cuisine:** Each result shows a 🍽 cuisine badge (Italian, Pizza, Bakery and so on). After a search, a **Cuisine** menu lets you show just one type; the counts show how many of each were found. Places Google lists only as "restaurant" appear under *Other*. Like the other filters, it doesn't use another Google search.
 - **Cuisine and chain badges:** Amber badges warn about soy-, bean- or chickpea-heavy cuisines. Chains get an **Official allergen chart** link that searches the chain's own website. Five Guys and Chick-fil-A are flagged for peanut oil.
 - **Hours:** Each result shows whether it's open now and today's hours.
 - **Save** places to your **Shortlist**. Mark each one *Looks safe*, *Need to ask* or *Avoid*, and keep notes on safe dishes.
@@ -67,7 +70,7 @@ In **Settings → Back up or share your shortlist**, tap **Send backup** to text
 
 - **No app can promise a dish is safe.** Gluten-free tags and reviews almost never mention soy, peas, chickpeas or legumes. Treat results as leads, and confirm with the restaurant every time.
 - The menu scanner matches words; it doesn't understand the menu. A clean result doesn't mean a dish is free of allergens. Oils, sauces and seasonings are rarely listed.
-- Your shortlist, notes and key are saved on this phone only. Clearing the browser's website data erases them.
+- Your shortlist, recipe box, notes and key are saved on this phone only. Clearing the browser's website data erases them.
 
 ## Updating the app
 
