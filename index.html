@@ -106,6 +106,10 @@
 <main>
   <!-- FIND -->
   <section class="view on" id="v-find">
+    <div class="warnbox hide" id="updateBanner" style="display:flex;gap:10px;align-items:center;justify-content:space-between">
+      <span>A new version of Safe Plate is ready.</span>
+      <button class="btn small" id="btnUpdateBanner" style="flex:0 0 auto">Update now</button>
+    </div>
     <button class="btn ghost" id="btnQuickScan" style="width:100%;margin:0 0 12px;padding:13px">▥ Scan a grocery item</button>
     <div class="card">
       <div class="row" style="margin-bottom:8px">
@@ -234,7 +238,12 @@
     <div class="card">
       <h2>About</h2>
       <p class="note">Restaurant data from Google Maps. Typed-place lookup uses OpenStreetMap (© OpenStreetMap contributors). No source can promise a dish is free of an allergen. Always confirm with the restaurant.</p>
-      <button class="btn ghost small" id="btnClearAll">Clear shortlist</button>
+      <p class="note" style="margin-top:10px"><b>Version <span id="appVersion"></span></b> · <span id="updateState">Checking for updates…</span></p>
+      <div class="row" style="margin-top:8px">
+        <button class="btn" id="btnUpdateNow">Update now</button>
+        <button class="btn ghost small" id="btnClearAll" style="flex:0 0 auto">Clear shortlist</button>
+      </div>
+      <p class="note" style="margin-top:6px">Update now reloads the newest version. Your key, shortlist and notes stay.</p>
     </div>
   </section>
 </main>
@@ -984,6 +993,34 @@ $("#btnClearAll").onclick = e => {
   e.target.dataset.armed = "1"; e.target.textContent = "Tap again to clear";
   setTimeout(() => { delete e.target.dataset.armed; e.target.textContent = "Clear shortlist"; }, 3000);
 };
+
+
+/* ---------------- version & updates ---------------- */
+const APP_VERSION = "1.6";
+$("#appVersion").textContent = APP_VERSION;
+async function forceUpdate(){
+  $("#updateState").textContent = "Updating…";
+  try{ const regs = navigator.serviceWorker ? await navigator.serviceWorker.getRegistrations() : []; await Promise.all(regs.map(r => r.unregister())); }catch(e){}
+  try{ if (window.caches){ const keys = await caches.keys(); await Promise.all(keys.map(k => caches.delete(k))); } }catch(e){}
+  location.replace(location.pathname + "?v=" + Date.now());   // fresh copy; saved data is untouched
+}
+async function checkForUpdate(){
+  try{
+    const r = await fetch("index.html?check=" + Date.now(), { cache: "no-store" });
+    const m = (await r.text()).match(/const APP_VERSION = "([^"]+)"/);
+    if (m && m[1] !== APP_VERSION){
+      $("#updateState").textContent = "Version " + m[1] + " is available.";
+      $("#updateBanner").classList.remove("hide");
+    } else {
+      $("#updateState").textContent = "You're up to date.";
+    }
+  }catch(e){ $("#updateState").textContent = "Couldn't check for updates (offline?)."; }
+}
+$("#btnUpdateNow").onclick = forceUpdate;
+$("#btnUpdateBanner").onclick = forceUpdate;
+if (/[?&]v=\d+/.test(location.search)) history.replaceState(null, "", location.pathname);
+checkForUpdate();
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") checkForUpdate(); });
 
 /* ---------------- init ---------------- */
 updateKeyNotice();

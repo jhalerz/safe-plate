@@ -71,4 +71,6 @@ In **Settings → Back up or share your shortlist**, tap **Send backup** to text
 
 ## Updating the app
 
-Upload the new `index.html` to the same GitHub repository (**Add file → Upload files**, replace). The installed app picks up the change the next time it opens with a connection.
+Upload the new files to the same GitHub repository (**Add file → Upload files**; same-named files are replaced). The app checks for new versions each time you open it. When one is ready, a **New version ready → Update now** banner appears on the main screen. You can also tap **Settings → Update now** anytime. Updating keeps your key, shortlist and notes. The version number is shown in Settings.
+
+To change the home-screen icon, replace the four `.png` files. iPhones save the icon when the app is added, so remove the app from your home screen and add it again to see a new icon.
