@@ -13,7 +13,6 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Safe Plate">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
   :root{
     --bg:#f6f4ef; --card:#fff; --ink:#1d2421; --muted:#5f6b66; --line:#e3e0d8;
@@ -111,14 +110,6 @@
         <button class="btn ghost" id="btnPlace" style="flex:0 0 auto">Search</button>
       </div>
       <div class="row" style="margin-top:10px">
-        <div style="flex:2 1 200px">
-          <label>Sources</label>
-          <div class="seg" id="segSource">
-            <button data-v="osm">OpenStreetMap</button>
-            <button data-v="google">Google</button>
-            <button data-v="both">Both</button>
-          </div>
-        </div>
         <div style="flex:1 1 110px">
           <label for="radius">Distance</label>
           <select id="radius">
@@ -130,8 +121,8 @@
           </select>
         </div>
       </div>
-      <label class="chk"><input type="checkbox" id="untagged"> Also show OpenStreetMap restaurants with no gluten-free info</label>
     </div>
+    <div class="warnbox hide" id="needKey">To search, add your Google Maps key in <a href="#" id="goSettings">Settings</a>.</div>
     <div class="status" id="status"></div>
     <div id="map"></div>
     <div id="results"></div>
@@ -187,8 +178,8 @@
   <!-- SETTINGS -->
   <section class="view" id="v-settings">
     <div class="card">
-      <h2>Google Maps (optional)</h2>
-      <p class="note">Paste your Google Maps Platform API key to turn on Google results. The key is saved on this phone only. See the setup guide for how to cap usage so it stays free.</p>
+      <h2>Google Maps key</h2>
+      <p class="note">Paste your Google Maps Platform API key. The app needs it to search. The key is saved on this device only.</p>
       <label for="gkey">API key</label>
       <input type="password" id="gkey" placeholder="AIza…" autocomplete="off">
       <div class="row" style="margin-top:8px">
@@ -205,7 +196,7 @@
     </div>
     <div class="card">
       <h2>About</h2>
-      <p class="note">Restaurant data © OpenStreetMap contributors (ODbL) and, when enabled, Google Maps. No source can promise a dish is free of an allergen. Always confirm with the restaurant.</p>
+      <p class="note">Restaurant data from Google Maps. Typed-place lookup uses OpenStreetMap (© OpenStreetMap contributors). No source can promise a dish is free of an allergen. Always confirm with the restaurant.</p>
       <button class="btn ghost small" id="btnClearAll">Clear shortlist</button>
     </div>
   </section>
@@ -226,7 +217,6 @@
   <div class="row" style="margin-top:8px"><button class="btn" id="copyClose">Done</button></div>
 </dialog>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
 "use strict";
 /* ---------------- storage helpers ---------------- */
@@ -242,7 +232,6 @@ function showView(v){
   document.querySelectorAll(".view").forEach(el => el.classList.toggle("on", el.id === "v-" + v));
   document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.v === v));
   if (v === "list") renderShortlist();
-  if (v === "find" && map) setTimeout(() => map.invalidateSize(), 50);
   window.scrollTo(0, 0);
 }
 document.querySelectorAll("#tabs button").forEach(b => b.onclick = () => showView(b.dataset.v));
@@ -311,23 +300,36 @@ function scanText(text){
   return { html, found };
 }
 
-/* ---------------- map ---------------- */
-let map = null, markerLayer = null;
-function ensureMap(lat, lon){
+/* ---------------- map (Google) ---------------- */
+let gmap = null, gmarkers = [], ginfo = null;
+async function drawMap(lat, lon, places){
   const el = $("#map");
-  el.style.display = "block";
-  if (!window.L){ el.style.display = "none"; return; }
-  if (!map){
-    map = L.map(el, { zoomControl: true });
-    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-    }).addTo(map);
-    markerLayer = L.layerGroup().addTo(map);
-  }
-  map.setView([lat, lon], 13);
-  markerLayer.clearLayers();
-  L.circleMarker([lat, lon], {radius:7, color:"#1f6f5c", fillOpacity:1}).addTo(markerLayer).bindPopup("You are here");
-  setTimeout(() => map.invalidateSize(), 50);
+  try{
+    await loadGoogle(store.get("gkey", ""));
+    const { Map, InfoWindow } = await google.maps.importLibrary("maps");
+    await google.maps.importLibrary("marker");
+    el.style.display = "block";
+    if (!gmap){
+      gmap = new Map(el, { center: { lat, lng: lon }, zoom: 13, disableDefaultUI: true, zoomControl: true,
+        clickableIcons: false, gestureHandling: "cooperative" });
+      ginfo = new InfoWindow();
+    }
+    gmarkers.forEach(m => m.setMap(null)); gmarkers = [];
+    const bounds = new google.maps.LatLngBounds();
+    const me = new google.maps.Marker({ position: { lat, lng: lon }, map: gmap, title: "You are here", zIndex: 999,
+      icon: { path: google.maps.SymbolPath.CIRCLE, scale: 7, fillColor: "#1a73e8", fillOpacity: 1, strokeColor: "#fff", strokeWeight: 2 } });
+    gmarkers.push(me); bounds.extend(me.getPosition());
+    places.forEach(p => {
+      const m = new google.maps.Marker({ position: { lat: p.lat, lng: p.lon }, map: gmap, title: p.name,
+        label: { text: String(p.rank), color: "#fff", fontSize: "11px", fontWeight: "700" } });
+      m.addListener("click", () => {
+        ginfo.setContent(`<div style="color:#111"><b>${esc(p.rank + ". " + p.name)}</b><br>${miles(p.dist)}</div>`);
+        ginfo.open({ anchor: m, map: gmap });
+      });
+      gmarkers.push(m); bounds.extend(m.getPosition());
+    });
+    if (places.length) gmap.fitBounds(bounds, 40); else { gmap.setCenter({ lat, lng: lon }); gmap.setZoom(13); }
+  }catch(e){ el.style.display = "none"; }
 }
 
 /* ---------------- geography ---------------- */
@@ -354,42 +356,6 @@ async function reverseCity(lat, lon){
     const a = j.address || {};
     return [a.city || a.town || a.village || a.county, a.state].filter(Boolean).join(", ");
   }catch(e){ return ""; }
-}
-
-/* ---------------- OpenStreetMap search ---------------- */
-async function searchOSM(lat, lon, radius, includeUntagged){
-  const amen = '["amenity"~"^(restaurant|cafe|fast_food|food_court|ice_cream)$"]';
-  const shop = '["shop"~"^(bakery|deli|pastry)$"]';
-  const around = `(around:${radius},${lat},${lon})`;
-  let q = `[out:json][timeout:25];(`;
-  q += `nwr${amen}["diet:gluten_free"]${around};nwr${shop}["diet:gluten_free"]${around};`;
-  if (includeUntagged) q += `nwr${amen}${around};`;
-  q += `);out tags center 300;`;
-  const endpoints = ["https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter"];
-  let lastErr;
-  for (const ep of endpoints){
-    try{
-      const r = await fetch(ep, { method:"POST", body: "data=" + encodeURIComponent(q),
-        headers: { "Content-Type": "application/x-www-form-urlencoded" } });
-      if (!r.ok) throw new Error("OpenStreetMap search failed (" + r.status + ")");
-      const j = await r.json();
-      const seen = new Set();
-      return j.elements.filter(e => e.tags && e.tags.name).map(e => {
-        const la = e.lat ?? e.center?.lat, lo = e.lon ?? e.center?.lon;
-        const t = e.tags;
-        const addr = [ [t["addr:housenumber"], t["addr:street"]].filter(Boolean).join(" "), t["addr:city"] ].filter(Boolean).join(", ");
-        return {
-          id: "osm:" + e.type + "/" + e.id, source: ["osm"], name: t.name, lat: la, lon: lo,
-          address: addr, phone: t.phone || t["contact:phone"] || "", website: t.website || t["contact:website"] || "",
-          cuisine: (t.cuisine || "").replace(/_/g, " ").replace(/;/g, ", "),
-          gfTag: t["diet:gluten_free"] || "", gfNote: t["diet:gluten_free:description"] || t["note:diet:gluten_free"] || "",
-          otherDiet: Object.keys(t).filter(k => /^diet:(soy|nut|peanut|legume|allergen)/.test(k)).map(k => k.replace("diet:","").replace(/_/g," ") + ": " + t[k]),
-          reviews: [], rating: null, ratingCount: null, mapsUrl: "", osmUrl: `https://www.openstreetmap.org/${e.type}/${e.id}`
-        };
-      }).filter(p => p.lat != null && !seen.has(p.id) && seen.add(p.id));
-    }catch(e){ lastErr = e; }
-  }
-  throw lastErr;
 }
 
 /* ---------------- Google search ---------------- */
@@ -430,21 +396,6 @@ async function searchGoogle(lat, lon, radius){
 }
 
 /* ---------------- merge + score ---------------- */
-const norm = s => s.toLowerCase().replace(/&/g,"and").replace(/[^a-z0-9]/g,"");
-function merge(a, b){
-  const out = a.slice();
-  for (const g of b){
-    const twin = out.find(o => distMeters(o.lat, o.lon, g.lat, g.lon) < 120 &&
-      (norm(o.name).includes(norm(g.name).slice(0,8)) || norm(g.name).includes(norm(o.name).slice(0,8))));
-    if (twin){
-      twin.source = [...new Set(twin.source.concat(g.source))];
-      twin.reviews = g.reviews; twin.rating = g.rating; twin.ratingCount = g.ratingCount; twin.mapsUrl = g.mapsUrl;
-      twin.address = twin.address || g.address; twin.phone = twin.phone || g.phone; twin.website = twin.website || g.website;
-      twin.gid = g.id;
-    } else out.push(g);
-  }
-  return out;
-}
 const SIGNALS = [
   { re:/(100%|dedicated|entirely|completely|fully)\s+gluten[- ]free|gluten[- ]free (kitchen|bakery|facility|restaurant)/i, label:"Dedicated GF mentioned", pts:30, cls:"b-good" },
   { re:/dedicated (gf |gluten[- ]free )?fryer/i, label:"Dedicated fryer mentioned", pts:15, cls:"b-good" },
@@ -458,11 +409,6 @@ const SIGNALS = [
 ];
 function score(p){
   let s = 0; const chips = []; const snips = [];
-  if (p.gfTag === "only"){ s += 50; chips.push(["Dedicated gluten-free (OSM)","b-good"]); }
-  else if (p.gfTag === "yes"){ s += 25; chips.push(["Gluten-free options (OSM)","b-info"]); }
-  else if (p.gfTag === "limited"){ s += 10; chips.push(["Limited GF options (OSM)","b-warn"]); }
-  else if (p.gfTag === "no"){ s -= 40; chips.push(["No GF options (OSM)","b-bad"]); }
-  else if (p.source.includes("osm") && !p.source.includes("google")) chips.push(["No gluten-free info","b-mute"]);
   for (const d of p.otherDiet) chips.push([d,"b-good"]);
   const text = [p.name, p.gfNote].concat(p.reviews.map(r => r.text)).join(" \n ");
   for (const sig of SIGNALS){
@@ -494,21 +440,15 @@ function links(p, city){
 }
 
 /* ---------------- search flow ---------------- */
-let source = store.get("source", "osm");
 let lastSearch = null;
-function setSource(v){
-  source = v; store.set("source", v);
-  document.querySelectorAll("#segSource button").forEach(b => b.classList.toggle("on", b.dataset.v === v));
-}
-document.querySelectorAll("#segSource button").forEach(b => b.onclick = () => { setSource(b.dataset.v); if (lastSearch) runSearch(lastSearch.lat, lastSearch.lon, lastSearch.city); });
 $("#radius").value = String(store.get("radius", "8047"));
 $("#radius").onchange = () => { store.set("radius", $("#radius").value); if (lastSearch) runSearch(lastSearch.lat, lastSearch.lon, lastSearch.city); };
-$("#untagged").checked = store.get("untagged", false);
-$("#untagged").onchange = () => { store.set("untagged", $("#untagged").checked); if (lastSearch) runSearch(lastSearch.lat, lastSearch.lon, lastSearch.city); };
 
 function setStatus(msg, err){ const el = $("#status"); el.textContent = msg; el.classList.toggle("err", !!err); }
 
+const needsKey = () => { if (store.get("gkey", "")) return false; updateKeyNotice(); setStatus(""); return true; };
 $("#btnLocate").onclick = () => {
+  if (needsKey()) return;
   if (!navigator.geolocation){ setStatus("This browser can't share your location. Type a place instead.", true); return; }
   setStatus("Finding your location…");
   navigator.geolocation.getCurrentPosition(async pos => {
@@ -522,6 +462,7 @@ $("#btnLocate").onclick = () => {
 async function searchTyped(){
   const q = $("#place").value.trim();
   if (!q) return;
+  if (needsKey()) return;
   setStatus("Looking up " + q + "…");
   try{
     const g = await geocode(q);
@@ -533,40 +474,29 @@ $("#place").addEventListener("keydown", e => { if (e.key === "Enter") searchType
 
 async function runSearch(lat, lon, city){
   lastSearch = { lat, lon, city };
+  if (!store.get("gkey", "")){ setStatus("Add your Google Maps key in Settings to search.", true); return; }
   const radius = +$("#radius").value;
-  const wantOSM = source !== "google", wantG = source !== "osm";
-  setStatus("Searching " + (source === "both" ? "OpenStreetMap and Google" : source === "google" ? "Google" : "OpenStreetMap") + "…");
+  setStatus("Searching Google Maps…");
   $("#results").innerHTML = "";
-  ensureMap(lat, lon);
-  const errs = [];
-  const [o, g] = await Promise.all([
-    wantOSM ? searchOSM(lat, lon, radius, $("#untagged").checked).catch(e => { errs.push(e.message); return []; }) : [],
-    wantG ? searchGoogle(lat, lon, radius).catch(e => { errs.push(e.message); return []; }) : []
-  ]);
-  let places = merge(o, g).map(p => {
-    p.dist = distMeters(lat, lon, p.lat, p.lon);
-    Object.assign(p, score(p));
-    return p;
-  });
+  let places;
+  try{ places = await searchGoogle(lat, lon, radius); }
+  catch(e){ setStatus(e.message, true); $("#map").style.display = "none"; return; }
+  places = places.map(p => { p.dist = distMeters(lat, lon, p.lat, p.lon); Object.assign(p, score(p)); return p; });
   places.sort((a, b) => b.s - a.s || a.dist - b.dist);
-  places = places.slice(0, 80);
+  places.forEach((p, i) => p.rank = i + 1);
   lastResults = places;
   renderResults(places, city);
-  const tagged = o.filter(p => p.gfTag && p.gfTag !== "no").length;
-  let msg = `${places.length} place${places.length === 1 ? "" : "s"} within ${miles(radius)}`;
-  if (wantOSM && !wantG && tagged < 5 && !$("#untagged").checked) msg += ". Few places are tagged here. Try “Both” or show untagged places.";
-  if (errs.length) msg += (places.length ? ". " : "") + errs.join(" ");
-  setStatus(msg, errs.length && !places.length);
+  drawMap(lat, lon, places);
+  setStatus(`${places.length} place${places.length === 1 ? "" : "s"} within ${miles(radius)}`);
 }
 
 let lastResults = [];
 function cardHTML(p, city, inList){
   const L = links(p, city);
   const saved = !!shortlist()[p.id];
-  const src = p.source.map(s => s === "osm" ? "OpenStreetMap" : "Google Maps").join(" + ");
   return `
   <div class="card" data-id="${esc(p.id)}">
-    <h3>${esc(p.name)}</h3>
+    <h3>${p.rank ? p.rank + ". " : ""}${esc(p.name)}</h3>
     <div class="meta">${p.dist != null ? miles(p.dist) + " · " : ""}${esc(p.address || "")}${p.cuisine ? " · " + esc(p.cuisine) : ""}${p.rating ? ` · ★ ${p.rating} (${p.ratingCount})` : ""}</div>
     <div>${(p.chips || []).map(([t, c]) => `<span class="badge ${c}">${esc(t)}</span>`).join("")}</div>
     ${p.gfNote ? `<div class="snip">${esc(p.gfNote)}</div>` : ""}
@@ -574,6 +504,7 @@ function cardHTML(p, city, inList){
     <div class="links">
       ${inList ? "" : `<button data-act="save">${saved ? "✓ Saved" : "＋ Save"}</button>`}
       <button data-act="scan">Check menu</button>
+      <button data-act="claude">Copy for Claude</button>
       ${p.website ? `<a href="${esc(p.website)}" target="_blank" rel="noopener">Website</a>` : ""}
       <a href="${esc(L.menu)}" target="_blank" rel="noopener">Find menu</a>
       <a href="${esc(L.allergen)}" target="_blank" rel="noopener">Allergen guide</a>
@@ -582,26 +513,15 @@ function cardHTML(p, city, inList){
       <a href="${esc(L.maps)}" target="_blank" rel="noopener">Directions</a>
       ${p.phone ? `<a href="tel:${esc(p.phone.replace(/[^+\d]/g, ""))}">Call ${esc(p.phone)}</a>` : ""}
     </div>
-    <div class="src">Source: ${src}${p.osmUrl ? ` · <a href="${esc(p.osmUrl)}" target="_blank" rel="noopener">fix on OSM</a>` : ""}</div>
+    <div class="src">Source: Google Maps</div>
   </div>`;
 }
 function renderResults(places, city){
   const box = $("#results");
-  if (!places.length){ box.innerHTML = `<div class="empty">No matches nearby. Try a bigger distance, switch sources to “Both”, or show untagged places.</div>`; return; }
-  box.innerHTML = `<div class="warnbox">These are <b>leads, not guarantees</b>. Gluten-free tags and reviews say nothing reliable about soy, peas, chickpeas, legumes or nuts. Check each menu and ask the restaurant.</div>` +
+  if (!places.length){ box.innerHTML = `<div class="empty">No gluten-free matches nearby. Try a bigger distance or a different place.</div>`; return; }
+  box.innerHTML = `<div class="warnbox">These are <b>leads, not guarantees</b>. Reviews say little about soy, peas, chickpeas, legumes or nuts. Check each menu and ask the restaurant.</div>` +
     places.map(p => cardHTML(p, city, false)).join("") +
-    (places.some(p => p.source.includes("google")) ? `<div class="src">Results include data from Google Maps.</div>` : "");
-  if (map && markerLayer){
-    const pts = [];
-    places.forEach(p => {
-      if (!p.source.includes("osm")) return; // Google results stay off the OpenStreetMap map (Google's terms)
-      const color = p.gfTag === "only" ? "#1f7a3a" : p.gfTag === "yes" ? "#1f6f5c" : p.gfTag === "limited" ? "#a15c00" : "#888";
-      L.circleMarker([p.lat, p.lon], { radius: 8, color, weight: 2, fillOpacity: .7 }).addTo(markerLayer)
-        .bindPopup(`<b>${esc(p.name)}</b><br>${miles(p.dist)}`);
-      pts.push([p.lat, p.lon]);
-    });
-    if (pts.length) map.fitBounds(L.latLngBounds(pts.concat([[lastSearch.lat, lastSearch.lon]])).pad(0.15), { maxZoom: 15 });
-  }
+    `<div class="src">Results from Google Maps.</div>`;
 }
 $("#results").addEventListener("click", e => {
   const b = e.target.closest("button[data-act]"); if (!b) return;
@@ -609,6 +529,7 @@ $("#results").addEventListener("click", e => {
   const p = lastResults.find(x => x.id === id); if (!p) return;
   if (b.dataset.act === "save"){ toggleSave(p); b.textContent = shortlist()[p.id] ? "✓ Saved" : "＋ Save"; }
   if (b.dataset.act === "scan") openScanFor(p);
+  if (b.dataset.act === "claude") copyText(claudePrompt([p])).then(ok => { if (ok) flash(b, "Copied ✓ Paste into Claude"); });
 });
 
 /* ---------------- shortlist ---------------- */
@@ -624,7 +545,7 @@ function renderShortlist(){
   const box = $("#shortlist");
   if (!s.length){ box.innerHTML = `<div class="empty">Nothing saved yet. Tap “＋ Save” on a search result.</div>`; return; }
   box.innerHTML = s.map(p => {
-    const html = cardHTML({ ...p, dist: null }, p.city, true);
+    const html = cardHTML({ ...p, dist: null, rank: null }, p.city, true);
     const extra = `
       <div class="statusSel">
         ${[["safe","Looks safe"],["ask","Need to ask"],["avoid","Avoid"]].map(([v,t]) => `<button class="s-${v} ${p.status === v ? "on" : ""}" data-st="${v}">${t}</button>`).join("")}
@@ -643,6 +564,7 @@ $("#shortlist").addEventListener("click", e => {
   const b = e.target.closest("button[data-act]"); if (!b) return;
   if (b.dataset.act === "remove"){ delete s[id]; store.set("shortlist", s); renderShortlist(); }
   if (b.dataset.act === "scan") openScanFor(p);
+  if (b.dataset.act === "claude") copyText(claudePrompt([p])).then(ok => { if (ok) flash(b, "Copied ✓ Paste into Claude"); });
 });
 $("#shortlist").addEventListener("input", e => {
   if (!e.target.matches("textarea[data-notes]")) return;
@@ -658,23 +580,24 @@ async function copyText(t){
 $("#copyClose").onclick = () => $("#copyDlg").close();
 function flash(btn, msg){ const o = btn.textContent; btn.textContent = msg; setTimeout(() => btn.textContent = o, 1600); }
 
-$("#btnCopyClaude").onclick = async e => {
-  const list = Object.values(shortlist());
-  const items = list.length ? list : lastResults.slice(0, 10);
-  if (!items.length){ flash(e.target, "Save some places first"); return; }
-  const lines = items.map((p, i) => `${i + 1}. ${p.name} | ${p.address || p.city || ""}${p.website ? " | " + p.website : ""}${p.phone ? " | " + p.phone : ""}${p.notes ? "\n   My notes: " + p.notes.replace(/\n/g, " ") : ""}`);
-  const text =
-`Please research these restaurants for someone with celiac disease who also must avoid ALL of: peanuts and tree nuts, all legumes (beans, lentils, etc.), peas (including pea protein), chickpeas (including chickpea/gram flour), and soy (including soy sauce, soybean oil and soy lecithin).
+function claudePrompt(items){
+  const lines = items.map((p, i) => `${items.length > 1 ? (i + 1) + ". " : ""}${p.name} | ${p.address || p.city || ""}${p.website ? " | " + p.website : ""}${p.phone ? " | " + p.phone : ""}${p.notes ? "\n   My notes: " + p.notes.replace(/\n/g, " ") : ""}`);
+  return `Please research ${items.length > 1 ? "these restaurants" : "this restaurant"} for someone with celiac disease who also must avoid ALL of: peanuts and tree nuts, all legumes (beans, lentils, etc.), peas (including pea protein), chickpeas (including chickpea/gram flour), and soy (including soy sauce, soybean oil and soy lecithin).
 
-For each restaurant:
+For ${items.length > 1 ? "each restaurant" : "it"}:
 - Check the official menu and any allergen guide/chart, plus Reddit, Find Me Gluten Free and recent reviews.
 - List gluten-free dishes that look free of every item above, and any that are unclear.
 - Note cross-contact practices (dedicated fryer, separate prep) and any reported reactions.
 - Give specific questions to ask staff, and link each source with its date.
-- Rate each place: likely good / needs a call / avoid.
+- Rate it: likely good / needs a call / avoid.
 
 ${lines.join("\n")}`;
-  if (await copyText(text)) flash(e.target, "Copied ✓");
+}
+$("#btnCopyClaude").onclick = async e => {
+  const list = Object.values(shortlist());
+  const items = list.length ? list : lastResults.slice(0, 10);
+  if (!items.length){ flash(e.target, "Save some places first"); return; }
+  if (await copyText(claudePrompt(items))) flash(e.target, "Copied ✓");
 };
 
 /* ---------------- menu scanner ---------------- */
@@ -776,13 +699,15 @@ $("#btnCopyChef").onclick = async e => { if (await copyText(CHEF)) flash(e.targe
 
 /* ---------------- settings ---------------- */
 $("#gkey").value = store.get("gkey", "");
+function updateKeyNotice(){ $("#needKey").classList.toggle("hide", !!store.get("gkey", "")); }
+$("#goSettings").onclick = e => { e.preventDefault(); showView("settings"); };
 $("#btnSaveKey").onclick = () => {
   const k = $("#gkey").value.trim();
   store.set("gkey", k);
-  $("#keyStatus").textContent = k ? "Saved. Choose “Google” or “Both” on the Find tab." : "No key entered.";
-  if (k && source === "osm") setSource("both");
+  $("#keyStatus").textContent = k ? "Saved. Go to Find and tap Near me." : "No key entered.";
+  updateKeyNotice();
 };
-$("#btnClearKey").onclick = () => { store.set("gkey", ""); $("#gkey").value = ""; $("#keyStatus").textContent = "Key removed."; setSource("osm"); };
+$("#btnClearKey").onclick = () => { store.set("gkey", ""); $("#gkey").value = ""; $("#keyStatus").textContent = "Key removed."; updateKeyNotice(); };
 $("#extraTerms").value = store.get("extraTerms", "");
 $("#btnSaveTerms").onclick = e => { store.set("extraTerms", $("#extraTerms").value); flash(e.target, "Saved ✓"); };
 $("#btnClearAll").onclick = e => {
@@ -792,8 +717,7 @@ $("#btnClearAll").onclick = e => {
 };
 
 /* ---------------- init ---------------- */
-if (source !== "osm" && !store.get("gkey", "")) source = "osm";
-setSource(source);
+updateKeyNotice();
 if ("serviceWorker" in navigator) window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
 </script>
 </body>
