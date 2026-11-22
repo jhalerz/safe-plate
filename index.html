@@ -204,8 +204,7 @@
       <div class="statusSel" id="rDiet" style="flex-wrap:wrap">
         <button data-d="vegan">Vegan</button><button data-d="egg-free">Egg-free</button><button data-d="dairy-free">Dairy-free</button>
       </div>
-      <label class="chk"><input type="checkbox" id="rExclude" checked> Exclude my allergens (drops pages mentioning nuts, soy, peas, chickpeas, beans or lentils)</label>
-      <p class="note" style="margin-top:4px">This is strict: a recipe that only mentions a swap like "or use almond flour" is dropped too.</p>
+      <p class="note" style="margin-top:4px">Searches only your words on the sites below. Save a recipe to your recipe box to check its ingredients.</p>
       <label style="margin-top:12px">Sites to search</label>
       <div id="rSites"></div>
       <div class="row" style="margin-top:6px">
@@ -1074,7 +1073,6 @@ $("#btnClearAll").onclick = e => {
 /* ---------------- recipes ---------------- */
 const DEFAULT_SITES = ["theloopywhisk.com"];
 const recipeSites = () => store.get("recipeSites", DEFAULT_SITES);
-const EXCLUDE_WORDS = ["almond", "nut", "nuts", "peanut", "cashew", "hazelnut", "chickpea", "soy", "pea", "peas", "bean", "beans", "lentil", "lentils"];
 function renderRecipeSites(){
   $("#rSites").innerHTML = recipeSites().map(d => `<span class="badge b-info" style="font-size:13px;padding:5px 10px">${esc(d)} <a href="#" data-del="${esc(d)}" style="color:inherit;text-decoration:none;margin-left:4px" aria-label="Remove">✕</a></span>`).join("")
     || `<p class="note">No sites yet. Add one below.</p>`;
@@ -1096,14 +1094,11 @@ function recipeSearch(){
   if (!sites.length){ flash($("#btnRecipeSearch"), "Add a site"); return; }
   const diets = [...document.querySelectorAll("#rDiet button.on")].map(b => `"${b.dataset.d}"`);
   const siteQ = sites.length === 1 ? `site:${sites[0]}` : "(" + sites.map(d => `site:${d}`).join(" OR ") + ")";
-  const parts = [siteQ, q, ...diets, "recipe"];
-  if ($("#rExclude").checked) parts.push(...EXCLUDE_WORDS.map(w => "-" + w));
+  const parts = [siteQ, q, ...diets];
   window.open("https://www.google.com/search?q=" + encodeURIComponent(parts.filter(Boolean).join(" ")), "_blank", "noopener");
 }
 $("#btnRecipeSearch").onclick = recipeSearch;
 $("#rq").addEventListener("keydown", e => { if (e.key === "Enter") recipeSearch(); });
-$("#rExclude").checked = store.get("rExclude", true);
-$("#rExclude").onchange = () => store.set("rExclude", $("#rExclude").checked);
 // style the diet buttons like the shortlist status buttons
 for (const b of document.querySelectorAll("#rDiet button")) b.classList.add("s-safe");
 
@@ -1175,7 +1170,7 @@ $("#recipeList").addEventListener("input", e => {
 renderRecipeSites(); renderRecipes();
 
 /* ---------------- version & updates ---------------- */
-const APP_VERSION = "1.8";
+const APP_VERSION = "1.9";
 $("#appVersion").textContent = APP_VERSION;
 async function forceUpdate(){
   $("#updateState").textContent = "Updating…";
