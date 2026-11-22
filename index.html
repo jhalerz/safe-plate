@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Safe Plate Finder</title>
+<meta name="theme-color" content="#1f6f5c">
+<meta name="description" content="Find restaurants with gluten-free dishes that are also nut, legume, pea, chickpea and soy free.">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Safe Plate">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+  :root{
+    --bg:#f6f4ef; --card:#fff; --ink:#1d2421; --muted:#5f6b66; --line:#e3e0d8;
+    --brand:#1f6f5c; --brand-soft:#e3f1ec; --warn:#a15c00; --warn-soft:#fff3df;
+    --bad:#b3261e; --bad-soft:#fde8e6; --good:#1f7a3a; --good-soft:#e5f5e9;
+    --radius:14px;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#121614; --card:#1b201e; --ink:#e8ece9; --muted:#9aa6a0; --line:#2c3330;
+      --brand:#5cc3a6; --brand-soft:#1d332c; --warn:#f0b35a; --warn-soft:#352a17;
+      --bad:#ff8a80; --bad-soft:#3a1f1d; --good:#7fd69a; --good-soft:#1c3324; }
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--ink);
+    font:16px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  header{position:sticky;top:0;z-index:500;background:var(--bg);
+    padding:calc(env(safe-area-inset-top) + 10px) 16px 8px;border-bottom:1px solid var(--line)}
+  header h1{margin:0;font-size:20px;letter-spacing:-.01em}
+  header p{margin:2px 0 0;color:var(--muted);font-size:13px}
+  main{padding:12px 16px calc(env(safe-area-inset-bottom) + 90px);max-width:760px;margin:0 auto}
+  nav.tabs{position:fixed;bottom:0;left:0;right:0;z-index:600;display:flex;background:var(--card);
+    border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
+  nav.tabs button{flex:1;border:0;background:none;color:var(--muted);padding:10px 2px 8px;font-size:11px;
+    display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer}
+  nav.tabs button svg{width:22px;height:22px}
+  nav.tabs button.on{color:var(--brand);font-weight:600}
+  .view{display:none}.view.on{display:block}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:14px;margin:0 0 12px}
+  h2{font-size:17px;margin:4px 0 10px}
+  h3{font-size:16px;margin:0 0 4px}
+  label{font-size:14px;color:var(--muted);display:block;margin:0 0 4px}
+  input[type=text],input[type=password],select,textarea{width:100%;font:inherit;color:var(--ink);background:var(--bg);
+    border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+  textarea{min-height:110px;resize:vertical}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .row > *{flex:1 1 auto}
+  .btn{font:inherit;font-weight:600;border:0;border-radius:10px;padding:11px 14px;cursor:pointer;
+    background:var(--brand);color:#fff;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:6px}
+  .btn.ghost{background:var(--brand-soft);color:var(--brand)}
+  .btn.small{padding:7px 10px;font-size:13px;font-weight:600}
+  .btn:disabled{opacity:.5}
+  .seg{display:flex;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:3px}
+  .seg button{flex:1;border:0;background:none;font:inherit;font-size:14px;padding:7px;border-radius:8px;color:var(--muted);cursor:pointer}
+  .seg button.on{background:var(--card);color:var(--ink);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.12)}
+  .chk{display:flex;gap:8px;align-items:center;font-size:14px;color:var(--ink);margin:8px 0 0}
+  #map{height:280px;border-radius:var(--radius);border:1px solid var(--line);margin:0 0 12px;display:none}
+  .status{color:var(--muted);font-size:14px;margin:6px 0 12px;min-height:1em}
+  .status.err{color:var(--bad)}
+  .badge{display:inline-block;font-size:12px;font-weight:700;padding:3px 8px;border-radius:999px;margin:0 4px 4px 0}
+  .b-good{background:var(--good-soft);color:var(--good)}
+  .b-warn{background:var(--warn-soft);color:var(--warn)}
+  .b-bad{background:var(--bad-soft);color:var(--bad)}
+  .b-info{background:var(--brand-soft);color:var(--brand)}
+  .b-mute{background:var(--bg);color:var(--muted);border:1px solid var(--line)}
+  .meta{color:var(--muted);font-size:13px;margin:0 0 8px}
+  .links{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+  .links a,.links button{font:inherit;font-size:13px;font-weight:600;text-decoration:none;color:var(--brand);
+    background:var(--brand-soft);border:0;border-radius:8px;padding:6px 9px;cursor:pointer}
+  .snip{font-size:13px;color:var(--muted);border-left:3px solid var(--line);padding-left:8px;margin:6px 0}
+  .src{font-size:11px;color:var(--muted);margin-top:8px}
+  .note{font-size:13px;color:var(--muted)}
+  .warnbox{background:var(--warn-soft);color:var(--ink);border-radius:var(--radius);padding:12px 14px;font-size:14px;margin:0 0 12px}
+  mark.c{background:var(--bad-soft);color:var(--bad);font-weight:700;border-radius:3px;padding:0 2px}
+  mark.a{background:var(--warn-soft);color:var(--warn);font-weight:700;border-radius:3px;padding:0 2px}
+  .scantext{white-space:pre-wrap;font-size:14px;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px;max-height:340px;overflow:auto}
+  .grp{margin:6px 0}
+  .grp b{font-size:14px}
+  ol.script li{margin:0 0 8px}
+  .empty{color:var(--muted);text-align:center;padding:24px 8px}
+  .statusSel{display:flex;gap:6px;margin:8px 0}
+  .statusSel button{flex:1;font:inherit;font-size:13px;font-weight:600;border:1px solid var(--line);background:var(--bg);color:var(--muted);border-radius:8px;padding:6px;cursor:pointer}
+  .statusSel button.on.s-safe{background:var(--good-soft);color:var(--good);border-color:transparent}
+  .statusSel button.on.s-ask{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+  .statusSel button.on.s-avoid{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+  dialog{border:0;border-radius:var(--radius);padding:16px;max-width:560px;width:calc(100% - 24px);background:var(--card);color:var(--ink)}
+  dialog::backdrop{background:rgba(0,0,0,.45)}
+  .hide{display:none!important}
+</style>
+</head>
+<body>
+<header>
+  <h1>Safe Plate Finder</h1>
+  <p>Gluten-free · no nuts · no legumes · no peas · no chickpeas · no soy</p>
+</header>
+
+<main>
+  <!-- FIND -->
+  <section class="view on" id="v-find">
+    <div class="card">
+      <div class="row" style="margin-bottom:8px">
+        <button class="btn" id="btnLocate">📍 Near me</button>
+      </div>
+      <div class="row">
+        <input type="text" id="place" placeholder="…or type a city, address or ZIP" autocomplete="off">
+        <button class="btn ghost" id="btnPlace" style="flex:0 0 auto">Search</button>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <div style="flex:2 1 200px">
+          <label>Sources</label>
+          <div class="seg" id="segSource">
+            <button data-v="osm">OpenStreetMap</button>
+            <button data-v="google">Google</button>
+            <button data-v="both">Both</button>
+          </div>
+        </div>
+        <div style="flex:1 1 110px">
+          <label for="radius">Distance</label>
+          <select id="radius">
+            <option value="1609">1 mile</option>
+            <option value="4828">3 miles</option>
+            <option value="8047" selected>5 miles</option>
+            <option value="16093">10 miles</option>
+            <option value="40234">25 miles</option>
+          </select>
+        </div>
+      </div>
+      <label class="chk"><input type="checkbox" id="untagged"> Also show OpenStreetMap restaurants with no gluten-free info</label>
+    </div>
+    <div class="status" id="status"></div>
+    <div id="map"></div>
+    <div id="results"></div>
+  </section>
+
+  <!-- SHORTLIST -->
+  <section class="view" id="v-list">
+    <div class="card">
+      <h2>Shortlist</h2>
+      <p class="note">Save places from search results, mark what you learned, and keep notes on safe dishes. Saved on this phone only.</p>
+      <div class="row" style="margin-top:8px">
+        <button class="btn" id="btnCopyClaude">Copy for Claude</button>
+      </div>
+      <p class="note" style="margin-top:8px">Copies a ready-made research request. Paste it into your “Celiac &amp; Allergy Restaurant Finder” project in Claude for a deep check of menus, allergen guides, Reddit and Find Me Gluten Free.</p>
+    </div>
+    <div id="shortlist"></div>
+  </section>
+
+  <!-- SCAN -->
+  <section class="view" id="v-scan">
+    <div class="card">
+      <h2>Check a menu</h2>
+      <p class="note" id="scanFor"></p>
+      <p class="note">Take a photo of a menu or allergen chart, or paste menu text from a website. Words matching your avoid list get highlighted.</p>
+      <div class="row" style="margin:10px 0">
+        <label class="btn" style="flex:1;margin:0;color:#fff" for="photo">📷 Photo of menu</label>
+        <input type="file" id="photo" accept="image/*" capture="environment" class="hide">
+      </div>
+      <label for="pasted">Or paste menu text</label>
+      <textarea id="pasted" placeholder="Paste a dish description, a whole menu, or an allergen chart…"></textarea>
+      <div class="row" style="margin-top:8px"><button class="btn ghost" id="btnScanText">Check this text</button></div>
+      <div class="status" id="scanStatus"></div>
+    </div>
+    <div id="scanOut"></div>
+  </section>
+
+  <!-- ASK -->
+  <section class="view" id="v-ask">
+    <div class="card">
+      <h2>What to ask the restaurant</h2>
+      <p class="note">Menus and websites go out of date. Confirm with staff (ideally a manager or chef) before ordering.</p>
+      <ol class="script" id="askList"></ol>
+      <button class="btn ghost" id="btnCopyAsk">Copy these questions</button>
+    </div>
+    <div class="card">
+      <h2>Chef card</h2>
+      <p class="note">Show this to your server to pass to the kitchen.</p>
+      <div class="scantext" id="chefCard"></div>
+      <div class="row" style="margin-top:8px"><button class="btn ghost" id="btnCopyChef">Copy chef card</button></div>
+    </div>
+  </section>
+
+  <!-- SETTINGS -->
+  <section class="view" id="v-settings">
+    <div class="card">
+      <h2>Google Maps (optional)</h2>
+      <p class="note">Paste your Google Maps Platform API key to turn on Google results. The key is saved on this phone only. See the setup guide for how to cap usage so it stays free.</p>
+      <label for="gkey">API key</label>
+      <input type="password" id="gkey" placeholder="AIza…" autocomplete="off">
+      <div class="row" style="margin-top:8px">
+        <button class="btn" id="btnSaveKey">Save key</button>
+        <button class="btn ghost" id="btnClearKey">Remove key</button>
+      </div>
+      <div class="status" id="keyStatus"></div>
+    </div>
+    <div class="card">
+      <h2>Extra words to flag</h2>
+      <p class="note">Add anything else the scanner should catch, separated by commas (e.g. sesame, mustard, corn).</p>
+      <input type="text" id="extraTerms" placeholder="sesame, mustard">
+      <div class="row" style="margin-top:8px"><button class="btn ghost" id="btnSaveTerms">Save words</button></div>
+    </div>
+    <div class="card">
+      <h2>About</h2>
+      <p class="note">Restaurant data © OpenStreetMap contributors (ODbL) and, when enabled, Google Maps. No source can promise a dish is free of an allergen. Always confirm with the restaurant.</p>
+      <button class="btn ghost small" id="btnClearAll">Clear shortlist</button>
+    </div>
+  </section>
+</main>
+
+<nav class="tabs" id="tabs">
+  <button data-v="find" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Find</button>
+  <button data-v="list"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 3h12v18l-6-4-6 4z"/></svg>Shortlist</button>
+  <button data-v="scan"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="18" height="14" rx="2"/><circle cx="12" cy="13" r="3.5"/><path d="M8 6l1.5-2h5L16 6"/></svg>Check menu</button>
+  <button data-v="ask"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16v11H8l-4 4z"/></svg>Ask</button>
+  <button data-v="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/></svg>Settings</button>
+</nav>
+
+<dialog id="copyDlg">
+  <h2>Copy this text</h2>
+  <p class="note">Your browser blocked automatic copying. Select all and copy.</p>
+  <textarea id="copyArea" style="min-height:220px"></textarea>
+  <div class="row" style="margin-top:8px"><button class="btn" id="copyClose">Done</button></div>
+</dialog>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+"use strict";
+/* ---------------- storage helpers ---------------- */
+const store = {
+  get(k, d){ try{ const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); }catch(e){ return d; } },
+  set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
+};
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+/* ---------------- tabs ---------------- */
+function showView(v){
+  document.querySelectorAll(".view").forEach(el => el.classList.toggle("on", el.id === "v-" + v));
+  document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.v === v));
+  if (v === "list") renderShortlist();
+  if (v === "find" && map) setTimeout(() => map.invalidateSize(), 50);
+  window.scrollTo(0, 0);
+}
+document.querySelectorAll("#tabs button").forEach(b => b.onclick = () => showView(b.dataset.v));
+
+/* ---------------- allergen dictionary ---------------- */
+// c = contains (red), a = ask about it (amber)
+const GROUPS = [
+  { id:"gluten", name:"Gluten", terms:[
+    ["wheat","c"],["flour","a"],["barley","c"],["rye","c"],["malt","c"],["breaded","c"],["battered","c"],["beer[- ]battered","c"],
+    ["crouton","c"],["seitan","c"],["couscous","c"],["bulgur","c"],["farro","c"],["spelt","c"],["semolina","c"],["durum","c"],
+    ["orzo","c"],["panko","c"],["breadcrumbs?","c"],["pasta","a"],["noodles?","a"],["tortilla","a"],["bun","a"],["brioche","c"],
+    ["soy sauce","c"],["teriyaki","c"],["hoisin","c"],["beer","a"],["brewer'?s yeast","a"],["fried","a"],["crispy","a"],["gravy","a"],["roux","a"],["oats?","a"]]},
+  { id:"nuts", name:"Peanuts & tree nuts", terms:[
+    ["peanuts?","c"],["nuts?","c"],["almonds?","c"],["cashews?","c"],["pecans?","c"],["walnuts?","c"],["pistachios?","c"],["hazelnuts?","c"],
+    ["macadamia","c"],["pine nuts?","c"],["brazil nuts?","c"],["praline","c"],["marzipan","c"],["nutella","c"],["frangipane","c"],["gianduja","c"],
+    ["satay","c"],["pesto","a"],["romesco","c"],["mole","a"],["nut butter","c"],["coconut","a"],["nut oil","c"]]},
+  { id:"soy", name:"Soy", terms:[
+    ["soy","c"],["soya","c"],["soybeans?","c"],["tamari","c"],["shoyu","c"],["edamame","c"],["tofu","c"],["tempeh","c"],["miso","c"],
+    ["natto","c"],["lecithin","a"],["textured vegetable protein","c"],["tvp","c"],["vegetable protein","a"],["vegetable oil","a"],
+    ["ponzu","c"],["teriyaki","c"],["hoisin","c"],["gochujang","c"],["doenjang","c"],["mayo(?:nnaise)?","a"],["vegan (?:cheese|butter|mayo)","a"],["plant[- ]based","a"]]},
+  { id:"legumes", name:"Beans & other legumes", terms:[
+    ["beans?","c"],["black beans?","c"],["pinto","c"],["refried","c"],["kidney beans?","c"],["lentils?","c"],["dal","c"],["dhal","c"],["daal","c"],
+    ["lupin[e]?","c"],["fava","c"],["mung","c"],["bean sprouts","c"],["cannellini","c"],["navy beans?","c"],["carob","c"],["tamarind","a"],
+    ["guar gum","a"],["locust bean gum","a"],["fenugreek","a"],["peanuts?","c"],["chili","a"],["burrito bowl","a"]]},
+  { id:"peas", name:"Peas", terms:[
+    ["peas?","c"],["pea protein","c"],["snap peas?","c"],["snow peas?","c"],["split peas?","c"],["sugar snaps?","c"],["pea shoots","c"],["black[- ]eyed peas?","c"],["pigeon peas?","c"]]},
+  { id:"chickpeas", name:"Chickpeas", terms:[
+    ["chickpeas?","c"],["garbanzos?","c"],["chana","c"],["channa","c"],["besan","c"],["gram flour","c"],["hummus","c"],["houmous","c"],["falafel","c"],
+    ["aquafaba","c"],["socca","c"],["panisse","c"],["pakoras?","c"],["bhajis?","c"]]},
+  { id:"hidden", name:"Often hides allergens — ask", terms:[
+    ["natural flavou?rs?","a"],["spice blend","a"],["seasoning","a"],["house sauce","a"],["marinated?","a"],["dressing","a"],["sauce","a"],
+    ["shared fryer","a"],["may contain","a"],["processed in a facility","a"],["gluten[- ]friendly","a"]]}
+];
+function extraGroup(){
+  const words = (store.get("extraTerms","") || "").split(",").map(s => s.trim()).filter(Boolean);
+  if (!words.length) return null;
+  return { id:"extra", name:"Your extra words", terms: words.map(w => [w.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"),"c"]) };
+}
+function scanText(text){
+  const groups = GROUPS.concat(extraGroup() || []);
+  const hits = []; // {start,end,level,group,term}
+  const found = {}; // group -> Map(term -> level)
+  for (const g of groups){
+    for (const [pat, level] of g.terms){
+      const re = new RegExp("\\b(" + pat + ")\\b", "gi");
+      let m;
+      while ((m = re.exec(text))){
+        // "gluten free" / "soy free" style mentions are not hits for the ingredient itself
+        const after = text.slice(m.index + m[0].length, m.index + m[0].length + 8).toLowerCase();
+        if (/^[\s-]*free/.test(after)) continue;
+        hits.push({start:m.index, end:m.index + m[0].length, level, group:g.name});
+        found[g.name] = found[g.name] || new Map();
+        const key = m[0].toLowerCase();
+        if (found[g.name].get(key) !== "c") found[g.name].set(key, level);
+      }
+    }
+  }
+  hits.sort((a,b) => a.start - b.start || (b.end - b.start) - (a.end - a.start));
+  let html = "", pos = 0;
+  for (const h of hits){
+    if (h.start < pos) continue;
+    html += esc(text.slice(pos, h.start)) + `<mark class="${h.level}" title="${esc(h.group)}">${esc(text.slice(h.start, h.end))}</mark>`;
+    pos = h.end;
+  }
+  html += esc(text.slice(pos));
+  return { html, found };
+}
+
+/* ---------------- map ---------------- */
+let map = null, markerLayer = null;
+function ensureMap(lat, lon){
+  const el = $("#map");
+  el.style.display = "block";
+  if (!window.L){ el.style.display = "none"; return; }
+  if (!map){
+    map = L.map(el, { zoomControl: true });
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+    }).addTo(map);
+    markerLayer = L.layerGroup().addTo(map);
+  }
+  map.setView([lat, lon], 13);
+  markerLayer.clearLayers();
+  L.circleMarker([lat, lon], {radius:7, color:"#1f6f5c", fillOpacity:1}).addTo(markerLayer).bindPopup("You are here");
+  setTimeout(() => map.invalidateSize(), 50);
+}
+
+/* ---------------- geography ---------------- */
+function distMeters(a, b, c, d){
+  const R = 6371000, toR = x => x * Math.PI / 180;
+  const dLat = toR(c - a), dLon = toR(d - b);
+  const h = Math.sin(dLat/2)**2 + Math.cos(toR(a))*Math.cos(toR(c))*Math.sin(dLon/2)**2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+const miles = m => (m / 1609.34).toFixed(m < 1609 ? 2 : 1) + " mi";
+
+async function geocode(q){
+  const url = "https://nominatim.openstreetmap.org/search?format=json&limit=1&q=" + encodeURIComponent(q);
+  const r = await fetch(url, { headers: { "Accept": "application/json" } });
+  if (!r.ok) throw new Error("Place lookup failed (" + r.status + ")");
+  const j = await r.json();
+  if (!j.length) throw new Error("Couldn't find that place. Try adding the city and state.");
+  return { lat: +j[0].lat, lon: +j[0].lon, label: j[0].display_name };
+}
+async function reverseCity(lat, lon){
+  try{
+    const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&zoom=10&lat=${lat}&lon=${lon}`);
+    const j = await r.json();
+    const a = j.address || {};
+    return [a.city || a.town || a.village || a.county, a.state].filter(Boolean).join(", ");
+  }catch(e){ return ""; }
+}
+
+/* ---------------- OpenStreetMap search ---------------- */
+async function searchOSM(lat, lon, radius, includeUntagged){
+  const amen = '["amenity"~"^(restaurant|cafe|fast_food|food_court|ice_cream)$"]';
+  const shop = '["shop"~"^(bakery|deli|pastry)$"]';
+  const around = `(around:${radius},${lat},${lon})`;
+  let q = `[out:json][timeout:25];(`;
+  q += `nwr${amen}["diet:gluten_free"]${around};nwr${shop}["diet:gluten_free"]${around};`;
+  if (includeUntagged) q += `nwr${amen}${around};`;
+  q += `);out tags center 300;`;
+  const endpoints = ["https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter"];
+  let lastErr;
+  for (const ep of endpoints){
+    try{
+      const r = await fetch(ep, { method:"POST", body: "data=" + encodeURIComponent(q),
+        headers: { "Content-Type": "application/x-www-form-urlencoded" } });
+      if (!r.ok) throw new Error("OpenStreetMap search failed (" + r.status + ")");
+      const j = await r.json();
+      const seen = new Set();
+      return j.elements.filter(e => e.tags && e.tags.name).map(e => {
+        const la = e.lat ?? e.center?.lat, lo = e.lon ?? e.center?.lon;
+        const t = e.tags;
+        const addr = [ [t["addr:housenumber"], t["addr:street"]].filter(Boolean).join(" "), t["addr:city"] ].filter(Boolean).join(", ");
+        return {
+          id: "osm:" + e.type + "/" + e.id, source: ["osm"], name: t.name, lat: la, lon: lo,
+          address: addr, phone: t.phone || t["contact:phone"] || "", website: t.website || t["contact:website"] || "",
+          cuisine: (t.cuisine || "").replace(/_/g, " ").replace(/;/g, ", "),
+          gfTag: t["diet:gluten_free"] || "", gfNote: t["diet:gluten_free:description"] || t["note:diet:gluten_free"] || "",
+          otherDiet: Object.keys(t).filter(k => /^diet:(soy|nut|peanut|legume|allergen)/.test(k)).map(k => k.replace("diet:","").replace(/_/g," ") + ": " + t[k]),
+          reviews: [], rating: null, ratingCount: null, mapsUrl: "", osmUrl: `https://www.openstreetmap.org/${e.type}/${e.id}`
+        };
+      }).filter(p => p.lat != null && !seen.has(p.id) && seen.add(p.id));
+    }catch(e){ lastErr = e; }
+  }
+  throw lastErr;
+}
+
+/* ---------------- Google search ---------------- */
+let googleLoading = null;
+function loadGoogle(key){
+  if (window.google?.maps?.importLibrary) return Promise.resolve();
+  if (googleLoading) return googleLoading;
+  googleLoading = new Promise((resolve, reject) => {
+    window.__gmReady = () => resolve();
+    window.gm_authFailure = () => reject(new Error("Google rejected the API key. Check the key and its website restriction in Google Cloud."));
+    const s = document.createElement("script");
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&v=weekly&loading=async&callback=__gmReady`;
+    s.async = true;
+    s.onerror = () => reject(new Error("Couldn't load Google Maps."));
+    document.head.appendChild(s);
+  });
+  googleLoading.catch(() => { googleLoading = null; });
+  return googleLoading;
+}
+async function searchGoogle(lat, lon, radius){
+  const key = store.get("gkey", "");
+  if (!key) throw new Error("Add a Google API key in Settings to use Google results.");
+  await loadGoogle(key);
+  const { Place } = await google.maps.importLibrary("places");
+  const { places } = await Place.searchByText({
+    textQuery: "gluten free restaurant",
+    fields: ["id","displayName","formattedAddress","location","rating","userRatingCount","websiteURI","nationalPhoneNumber","googleMapsURI","reviews"],
+    locationBias: { center: { lat, lng: lon }, radius: Math.min(radius, 50000) },
+    maxResultCount: 20
+  });
+  return (places || []).map(p => ({
+    id: "g:" + p.id, source: ["google"], name: p.displayName || "", lat: p.location?.lat(), lon: p.location?.lng(),
+    address: p.formattedAddress || "", phone: p.nationalPhoneNumber || "", website: p.websiteURI || "",
+    cuisine: "", gfTag: "", gfNote: "", otherDiet: [],
+    reviews: (p.reviews || []).map(r => ({ text: (r.text || ""), when: r.relativePublishTimeDescription || "" })).filter(r => r.text),
+    rating: p.rating ?? null, ratingCount: p.userRatingCount ?? null, mapsUrl: p.googleMapsURI || "", osmUrl: ""
+  })).filter(p => p.lat != null && distMeters(lat, lon, p.lat, p.lon) <= radius * 1.25);
+}
+
+/* ---------------- merge + score ---------------- */
+const norm = s => s.toLowerCase().replace(/&/g,"and").replace(/[^a-z0-9]/g,"");
+function merge(a, b){
+  const out = a.slice();
+  for (const g of b){
+    const twin = out.find(o => distMeters(o.lat, o.lon, g.lat, g.lon) < 120 &&
+      (norm(o.name).includes(norm(g.name).slice(0,8)) || norm(g.name).includes(norm(o.name).slice(0,8))));
+    if (twin){
+      twin.source = [...new Set(twin.source.concat(g.source))];
+      twin.reviews = g.reviews; twin.rating = g.rating; twin.ratingCount = g.ratingCount; twin.mapsUrl = g.mapsUrl;
+      twin.address = twin.address || g.address; twin.phone = twin.phone || g.phone; twin.website = twin.website || g.website;
+      twin.gid = g.id;
+    } else out.push(g);
+  }
+  return out;
+}
+const SIGNALS = [
+  { re:/(100%|dedicated|entirely|completely|fully)\s+gluten[- ]free|gluten[- ]free (kitchen|bakery|facility|restaurant)/i, label:"Dedicated GF mentioned", pts:30, cls:"b-good" },
+  { re:/dedicated (gf |gluten[- ]free )?fryer/i, label:"Dedicated fryer mentioned", pts:15, cls:"b-good" },
+  { re:/celiac|coeliac/i, label:"Celiac mentioned", pts:8, cls:"b-info" },
+  { re:/allergy[- ]friendly|allergen[- ]free|top[- ]?(8|9|14)[- ]free|allergy (menu|binder|chart)/i, label:"Allergy-friendly mentioned", pts:20, cls:"b-good" },
+  { re:/soy[- ]free|no soy/i, label:"Soy-free mentioned", pts:10, cls:"b-good" },
+  { re:/(nut|peanut)[- ]free/i, label:"Nut-free mentioned", pts:10, cls:"b-good" },
+  { re:/gluten[- ]free (menu|options?|bun|bread|pizza|crust|pasta)/i, label:"GF menu/options", pts:8, cls:"b-info" },
+  { re:/cross[- ]?contam|shared fryer|not (safe )?for celiac/i, label:"Cross-contact concern", pts:-15, cls:"b-warn" },
+  { re:/got sick|glutened|made me sick|reaction/i, label:"Someone reported a reaction", pts:-25, cls:"b-bad" }
+];
+function score(p){
+  let s = 0; const chips = []; const snips = [];
+  if (p.gfTag === "only"){ s += 50; chips.push(["Dedicated gluten-free (OSM)","b-good"]); }
+  else if (p.gfTag === "yes"){ s += 25; chips.push(["Gluten-free options (OSM)","b-info"]); }
+  else if (p.gfTag === "limited"){ s += 10; chips.push(["Limited GF options (OSM)","b-warn"]); }
+  else if (p.gfTag === "no"){ s -= 40; chips.push(["No GF options (OSM)","b-bad"]); }
+  else if (p.source.includes("osm") && !p.source.includes("google")) chips.push(["No gluten-free info","b-mute"]);
+  for (const d of p.otherDiet) chips.push([d,"b-good"]);
+  const text = [p.name, p.gfNote].concat(p.reviews.map(r => r.text)).join(" \n ");
+  for (const sig of SIGNALS){
+    if (sig.re.test(text)){
+      s += sig.pts; chips.push([sig.label, sig.cls]);
+      const r = p.reviews.find(r => sig.re.test(r.text));
+      if (r && snips.length < 3){
+        const m = r.text.match(sig.re); const i = Math.max(0, m.index - 70);
+        snips.push((i > 0 ? "…" : "") + r.text.slice(i, m.index + m[0].length + 90).trim() + "…" + (r.when ? ` (${r.when})` : ""));
+      }
+    }
+  }
+  if (p.rating) s += (p.rating - 4) * 4;
+  return { s, chips, snips };
+}
+
+/* ---------------- research links ---------------- */
+function links(p, city){
+  const where = city || p.address.split(",").slice(-3).join(",");
+  const q = encodeURIComponent;
+  const g = s => "https://www.google.com/search?q=" + q(s);
+  return {
+    maps: p.mapsUrl || `https://www.google.com/maps/search/?api=1&query=${q(p.name + " " + (p.address || where))}`,
+    fmgf: g(`site:findmeglutenfree.com "${p.name}" ${where}`),
+    reddit: g(`site:reddit.com "${p.name}" ${where} celiac OR "gluten free"`),
+    allergen: g(`"${p.name}" allergen menu OR "allergen guide" OR "allergy chart"`),
+    menu: g(`"${p.name}" ${where} menu`)
+  };
+}
+
+/* ---------------- search flow ---------------- */
+let source = store.get("source", "osm");
+let lastSearch = null;
+function setSource(v){
+  source = v; store.set("source", v);
+  document.querySelectorAll("#segSource button").forEach(b => b.classList.toggle("on", b.dataset.v === v));
+}
+document.querySelectorAll("#segSource button").forEach(b => b.onclick = () => { setSource(b.dataset.v); if (lastSearch) runSearch(lastSearch.lat, lastSearch.lon, lastSearch.city); });
+$("#radius").value = String(store.get("radius", "8047"));
+$("#radius").onchange = () => { store.set("radius", $("#radius").value); if (lastSearch) runSearch(lastSearch.lat, lastSearch.lon, lastSearch.city); };
+$("#untagged").checked = store.get("untagged", false);
+$("#untagged").onchange = () => { store.set("untagged", $("#untagged").checked); if (lastSearch) runSearch(lastSearch.lat, lastSearch.lon, lastSearch.city); };
+
+function setStatus(msg, err){ const el = $("#status"); el.textContent = msg; el.classList.toggle("err", !!err); }
+
+$("#btnLocate").onclick = () => {
+  if (!navigator.geolocation){ setStatus("This browser can't share your location. Type a place instead.", true); return; }
+  setStatus("Finding your location…");
+  navigator.geolocation.getCurrentPosition(async pos => {
+    const { latitude: lat, longitude: lon } = pos.coords;
+    const city = await reverseCity(lat, lon);
+    runSearch(lat, lon, city);
+  }, err => {
+    setStatus(err.code === 1 ? "Location permission was denied. Allow location for this site in your phone settings, or type a place." : "Couldn't get your location. Type a place instead.", true);
+  }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 120000 });
+};
+async function searchTyped(){
+  const q = $("#place").value.trim();
+  if (!q) return;
+  setStatus("Looking up " + q + "…");
+  try{
+    const g = await geocode(q);
+    runSearch(g.lat, g.lon, q);
+  }catch(e){ setStatus(e.message, true); }
+}
+$("#btnPlace").onclick = searchTyped;
+$("#place").addEventListener("keydown", e => { if (e.key === "Enter") searchTyped(); });
+
+async function runSearch(lat, lon, city){
+  lastSearch = { lat, lon, city };
+  const radius = +$("#radius").value;
+  const wantOSM = source !== "google", wantG = source !== "osm";
+  setStatus("Searching " + (source === "both" ? "OpenStreetMap and Google" : source === "google" ? "Google" : "OpenStreetMap") + "…");
+  $("#results").innerHTML = "";
+  ensureMap(lat, lon);
+  const errs = [];
+  const [o, g] = await Promise.all([
+    wantOSM ? searchOSM(lat, lon, radius, $("#untagged").checked).catch(e => { errs.push(e.message); return []; }) : [],
+    wantG ? searchGoogle(lat, lon, radius).catch(e => { errs.push(e.message); return []; }) : []
+  ]);
+  let places = merge(o, g).map(p => {
+    p.dist = distMeters(lat, lon, p.lat, p.lon);
+    Object.assign(p, score(p));
+    return p;
+  });
+  places.sort((a, b) => b.s - a.s || a.dist - b.dist);
+  places = places.slice(0, 80);
+  lastResults = places;
+  renderResults(places, city);
+  const tagged = o.filter(p => p.gfTag && p.gfTag !== "no").length;
+  let msg = `${places.length} place${places.length === 1 ? "" : "s"} within ${miles(radius)}`;
+  if (wantOSM && !wantG && tagged < 5 && !$("#untagged").checked) msg += ". Few places are tagged here. Try “Both” or show untagged places.";
+  if (errs.length) msg += (places.length ? ". " : "") + errs.join(" ");
+  setStatus(msg, errs.length && !places.length);
+}
+
+let lastResults = [];
+function cardHTML(p, city, inList){
+  const L = links(p, city);
+  const saved = !!shortlist()[p.id];
+  const src = p.source.map(s => s === "osm" ? "OpenStreetMap" : "Google Maps").join(" + ");
+  return `
+  <div class="card" data-id="${esc(p.id)}">
+    <h3>${esc(p.name)}</h3>
+    <div class="meta">${p.dist != null ? miles(p.dist) + " · " : ""}${esc(p.address || "")}${p.cuisine ? " · " + esc(p.cuisine) : ""}${p.rating ? ` · ★ ${p.rating} (${p.ratingCount})` : ""}</div>
+    <div>${(p.chips || []).map(([t, c]) => `<span class="badge ${c}">${esc(t)}</span>`).join("")}</div>
+    ${p.gfNote ? `<div class="snip">${esc(p.gfNote)}</div>` : ""}
+    ${(p.snips || []).map(s => `<div class="snip">“${esc(s)}”</div>`).join("")}
+    <div class="links">
+      ${inList ? "" : `<button data-act="save">${saved ? "✓ Saved" : "＋ Save"}</button>`}
+      <button data-act="scan">Check menu</button>
+      ${p.website ? `<a href="${esc(p.website)}" target="_blank" rel="noopener">Website</a>` : ""}
+      <a href="${esc(L.menu)}" target="_blank" rel="noopener">Find menu</a>
+      <a href="${esc(L.allergen)}" target="_blank" rel="noopener">Allergen guide</a>
+      <a href="${esc(L.fmgf)}" target="_blank" rel="noopener">Find Me GF</a>
+      <a href="${esc(L.reddit)}" target="_blank" rel="noopener">Reddit</a>
+      <a href="${esc(L.maps)}" target="_blank" rel="noopener">Directions</a>
+      ${p.phone ? `<a href="tel:${esc(p.phone.replace(/[^+\d]/g, ""))}">Call ${esc(p.phone)}</a>` : ""}
+    </div>
+    <div class="src">Source: ${src}${p.osmUrl ? ` · <a href="${esc(p.osmUrl)}" target="_blank" rel="noopener">fix on OSM</a>` : ""}</div>
+  </div>`;
+}
+function renderResults(places, city){
+  const box = $("#results");
+  if (!places.length){ box.innerHTML = `<div class="empty">No matches nearby. Try a bigger distance, switch sources to “Both”, or show untagged places.</div>`; return; }
+  box.innerHTML = `<div class="warnbox">These are <b>leads, not guarantees</b>. Gluten-free tags and reviews say nothing reliable about soy, peas, chickpeas, legumes or nuts. Check each menu and ask the restaurant.</div>` +
+    places.map(p => cardHTML(p, city, false)).join("") +
+    (places.some(p => p.source.includes("google")) ? `<div class="src">Results include data from Google Maps.</div>` : "");
+  if (map && markerLayer){
+    const pts = [];
+    places.forEach(p => {
+      if (!p.source.includes("osm")) return; // Google results stay off the OpenStreetMap map (Google's terms)
+      const color = p.gfTag === "only" ? "#1f7a3a" : p.gfTag === "yes" ? "#1f6f5c" : p.gfTag === "limited" ? "#a15c00" : "#888";
+      L.circleMarker([p.lat, p.lon], { radius: 8, color, weight: 2, fillOpacity: .7 }).addTo(markerLayer)
+        .bindPopup(`<b>${esc(p.name)}</b><br>${miles(p.dist)}`);
+      pts.push([p.lat, p.lon]);
+    });
+    if (pts.length) map.fitBounds(L.latLngBounds(pts.concat([[lastSearch.lat, lastSearch.lon]])).pad(0.15), { maxZoom: 15 });
+  }
+}
+$("#results").addEventListener("click", e => {
+  const b = e.target.closest("button[data-act]"); if (!b) return;
+  const id = b.closest(".card").dataset.id;
+  const p = lastResults.find(x => x.id === id); if (!p) return;
+  if (b.dataset.act === "save"){ toggleSave(p); b.textContent = shortlist()[p.id] ? "✓ Saved" : "＋ Save"; }
+  if (b.dataset.act === "scan") openScanFor(p);
+});
+
+/* ---------------- shortlist ---------------- */
+const shortlist = () => store.get("shortlist", {});
+function toggleSave(p){
+  const s = shortlist();
+  if (s[p.id]) delete s[p.id];
+  else s[p.id] = { ...p, city: lastSearch?.city || "", status: "", notes: "", savedAt: Date.now() };
+  store.set("shortlist", s);
+}
+function renderShortlist(){
+  const s = Object.values(shortlist()).sort((a, b) => b.savedAt - a.savedAt);
+  const box = $("#shortlist");
+  if (!s.length){ box.innerHTML = `<div class="empty">Nothing saved yet. Tap “＋ Save” on a search result.</div>`; return; }
+  box.innerHTML = s.map(p => {
+    const html = cardHTML({ ...p, dist: null }, p.city, true);
+    const extra = `
+      <div class="statusSel">
+        ${[["safe","Looks safe"],["ask","Need to ask"],["avoid","Avoid"]].map(([v,t]) => `<button class="s-${v} ${p.status === v ? "on" : ""}" data-st="${v}">${t}</button>`).join("")}
+      </div>
+      <label>Notes (safe dishes, what staff said, date)</label>
+      <textarea data-notes rows="3">${esc(p.notes)}</textarea>
+      <div class="row" style="margin-top:8px"><button class="btn ghost small" data-act="remove" style="flex:0 0 auto">Remove</button></div>`;
+    return html.replace(/<\/div>\s*$/, extra + "</div>");
+  }).join("");
+}
+$("#shortlist").addEventListener("click", e => {
+  const card = e.target.closest(".card"); if (!card) return;
+  const id = card.dataset.id; const s = shortlist(); const p = s[id]; if (!p) return;
+  const st = e.target.closest("button[data-st]");
+  if (st){ p.status = p.status === st.dataset.st ? "" : st.dataset.st; store.set("shortlist", s); renderShortlist(); return; }
+  const b = e.target.closest("button[data-act]"); if (!b) return;
+  if (b.dataset.act === "remove"){ delete s[id]; store.set("shortlist", s); renderShortlist(); }
+  if (b.dataset.act === "scan") openScanFor(p);
+});
+$("#shortlist").addEventListener("input", e => {
+  if (!e.target.matches("textarea[data-notes]")) return;
+  const id = e.target.closest(".card").dataset.id; const s = shortlist();
+  if (s[id]){ s[id].notes = e.target.value; store.set("shortlist", s); }
+});
+
+/* ---------------- copy helpers ---------------- */
+async function copyText(t){
+  try{ await navigator.clipboard.writeText(t); return true; }
+  catch(e){ $("#copyArea").value = t; $("#copyDlg").showModal(); $("#copyArea").select(); return false; }
+}
+$("#copyClose").onclick = () => $("#copyDlg").close();
+function flash(btn, msg){ const o = btn.textContent; btn.textContent = msg; setTimeout(() => btn.textContent = o, 1600); }
+
+$("#btnCopyClaude").onclick = async e => {
+  const list = Object.values(shortlist());
+  const items = list.length ? list : lastResults.slice(0, 10);
+  if (!items.length){ flash(e.target, "Save some places first"); return; }
+  const lines = items.map((p, i) => `${i + 1}. ${p.name} | ${p.address || p.city || ""}${p.website ? " | " + p.website : ""}${p.phone ? " | " + p.phone : ""}${p.notes ? "\n   My notes: " + p.notes.replace(/\n/g, " ") : ""}`);
+  const text =
+`Please research these restaurants for someone with celiac disease who also must avoid ALL of: peanuts and tree nuts, all legumes (beans, lentils, etc.), peas (including pea protein), chickpeas (including chickpea/gram flour), and soy (including soy sauce, soybean oil and soy lecithin).
+
+For each restaurant:
+- Check the official menu and any allergen guide/chart, plus Reddit, Find Me Gluten Free and recent reviews.
+- List gluten-free dishes that look free of every item above, and any that are unclear.
+- Note cross-contact practices (dedicated fryer, separate prep) and any reported reactions.
+- Give specific questions to ask staff, and link each source with its date.
+- Rate each place: likely good / needs a call / avoid.
+
+${lines.join("\n")}`;
+  if (await copyText(text)) flash(e.target, "Copied ✓");
+};
+
+/* ---------------- menu scanner ---------------- */
+let scanTarget = null;
+function openScanFor(p){
+  scanTarget = p;
+  $("#scanFor").textContent = "Checking a menu for: " + p.name;
+  $("#scanOut").innerHTML = ""; $("#pasted").value = ""; $("#scanStatus").textContent = "";
+  showView("scan");
+}
+function showScan(text, how){
+  const { html, found } = scanText(text);
+  const groups = Object.entries(found);
+  const summary = groups.length ? groups.map(([g, m]) => {
+    const words = [...m.entries()];
+    const c = words.filter(w => w[1] === "c").map(w => w[0]), a = words.filter(w => w[1] === "a").map(w => w[0]);
+    return `<div class="grp"><b>${esc(g)}</b>: ${c.map(w => `<span class="badge b-bad">${esc(w)}</span>`).join("")}${a.map(w => `<span class="badge b-warn">${esc(w)} – ask</span>`).join("")}</div>`;
+  }).join("") : `<p>No words from your avoid list were found. That does <b>not</b> mean it's safe: menus rarely list oils, sauces or seasonings. Still ask.</p>`;
+  $("#scanOut").innerHTML = `
+    <div class="card"><h2>What it found</h2>${summary}
+      <p class="note" style="margin-top:8px"><span class="badge b-bad">red</span> = listed ingredient to avoid · <span class="badge b-warn">amber</span> = often hides an allergen, so ask.</p>
+      ${scanTarget ? `<button class="btn ghost small" id="btnNoteScan">Add summary to shortlist notes</button>` : ""}
+    </div>
+    <div class="card"><h2>${how}</h2><div class="scantext">${html}</div>
+      <p class="note">Photo reading can misread words. Check anything important against the real menu.</p></div>`;
+  const nb = $("#btnNoteScan");
+  if (nb) nb.onclick = () => {
+    const s = shortlist();
+    if (!s[scanTarget.id]) s[scanTarget.id] = { ...scanTarget, city: lastSearch?.city || "", status: "ask", notes: "", savedAt: Date.now() };
+    const flagged = groups.map(([g, m]) => g + ": " + [...m.keys()].join(", ")).join("; ") || "no avoid-list words found";
+    s[scanTarget.id].notes = (s[scanTarget.id].notes ? s[scanTarget.id].notes + "\n" : "") + `Menu check ${new Date().toLocaleDateString()}: ${flagged}`;
+    store.set("shortlist", s); flash(nb, "Added ✓");
+  };
+}
+$("#btnScanText").onclick = () => {
+  const t = $("#pasted").value.trim();
+  if (!t){ $("#scanStatus").textContent = "Paste some menu text first."; return; }
+  $("#scanStatus").textContent = ""; showScan(t, "Menu text");
+};
+let tesseractLoading = null;
+function loadTesseract(){
+  if (window.Tesseract) return Promise.resolve();
+  if (tesseractLoading) return tesseractLoading;
+  tesseractLoading = new Promise((res, rej) => {
+    const s = document.createElement("script");
+    s.src = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
+    s.onload = res; s.onerror = () => { tesseractLoading = null; rej(new Error("Couldn't load the photo reader. Check your connection.")); };
+    document.head.appendChild(s);
+  });
+  return tesseractLoading;
+}
+$("#photo").onchange = async e => {
+  const file = e.target.files[0]; if (!file) return;
+  const st = $("#scanStatus");
+  try{
+    st.textContent = "Loading photo reader (first time takes a few seconds)…";
+    await loadTesseract();
+    const { data } = await Tesseract.recognize(file, "eng", {
+      logger: m => { if (m.status === "recognizing text") st.textContent = "Reading menu… " + Math.round(m.progress * 100) + "%"; }
+    });
+    st.textContent = "";
+    const text = (data.text || "").trim();
+    if (!text){ st.textContent = "Couldn't read any text. Try a closer, well-lit photo."; return; }
+    $("#pasted").value = text;
+    showScan(text, "Text read from photo");
+  }catch(err){ st.textContent = err.message || "Photo reading failed."; }
+  e.target.value = "";
+};
+
+/* ---------------- ask script ---------------- */
+const ASK = [
+  "Do you have a gluten-free menu, and is anything prepared in a separate area for celiac guests?",
+  "Is there a dedicated gluten-free fryer, or is it shared with breaded items?",
+  "Do your sauces, marinades, dressings or seasonings contain soy sauce, tamari, miso or soybean oil?",
+  "What cooking oil do you use? (Soybean oil and “vegetable oil” are often soy.)",
+  "Do any gluten-free breads, buns, crusts or pastas use chickpea flour, bean flour or pea protein?",
+  "Are there peanuts, tree nuts or nut flours (like almond flour) in the dish or used on the same prep surfaces?",
+  "Are there beans, lentils, peas or chickpeas in any soups, sides, bowls or garnishes for this dish?",
+  "Do you have an allergen chart or ingredient binder I can look at?",
+  "Can the kitchen change gloves, use clean pans and utensils, and prep this order separately?"
+];
+$("#askList").innerHTML = ASK.map(q => `<li>${esc(q)}</li>`).join("");
+const CHEF = `ALLERGY ORDER – PLEASE SHARE WITH THE KITCHEN
+
+I have celiac disease and must avoid ALL gluten (wheat, barley, rye, malt, regular soy sauce), including cross-contact.
+
+I am also allergic to / must avoid:
+• Peanuts and all tree nuts (including nut flours and nut oils)
+• All legumes: beans, lentils, peanuts, lupin
+• Peas, including pea protein
+• Chickpeas, including chickpea/gram flour and hummus
+• Soy: soy sauce, tamari, tofu, edamame, miso, soybean oil, soy lecithin
+
+Please use clean pans, utensils and gloves, and avoid shared fryers.
+Thank you so much!`;
+$("#chefCard").textContent = CHEF;
+$("#btnCopyAsk").onclick = async e => { if (await copyText(ASK.map((q, i) => `${i + 1}. ${q}`).join("\n"))) flash(e.target, "Copied ✓"); };
+$("#btnCopyChef").onclick = async e => { if (await copyText(CHEF)) flash(e.target, "Copied ✓"); };
+
+/* ---------------- settings ---------------- */
+$("#gkey").value = store.get("gkey", "");
+$("#btnSaveKey").onclick = () => {
+  const k = $("#gkey").value.trim();
+  store.set("gkey", k);
+  $("#keyStatus").textContent = k ? "Saved. Choose “Google” or “Both” on the Find tab." : "No key entered.";
+  if (k && source === "osm") setSource("both");
+};
+$("#btnClearKey").onclick = () => { store.set("gkey", ""); $("#gkey").value = ""; $("#keyStatus").textContent = "Key removed."; setSource("osm"); };
+$("#extraTerms").value = store.get("extraTerms", "");
+$("#btnSaveTerms").onclick = e => { store.set("extraTerms", $("#extraTerms").value); flash(e.target, "Saved ✓"); };
+$("#btnClearAll").onclick = e => {
+  if (e.target.dataset.armed){ store.set("shortlist", {}); flash(e.target, "Cleared"); delete e.target.dataset.armed; return; }
+  e.target.dataset.armed = "1"; e.target.textContent = "Tap again to clear";
+  setTimeout(() => { delete e.target.dataset.armed; e.target.textContent = "Clear shortlist"; }, 3000);
+};
+
+/* ---------------- init ---------------- */
+if (source !== "osm" && !store.get("gkey", "")) source = "osm";
+setSource(source);
+if ("serviceWorker" in navigator) window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+</script>
+</body>
+</html>

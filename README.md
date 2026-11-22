@@ -1,0 +1,67 @@
+# Safe Plate Finder — setup guide
+
+A phone app (installable web app) that finds restaurants with gluten-free dishes and helps you check them for **nuts, legumes, peas, chickpeas and soy**. Total cost: **$0**.
+
+## What's in the folder
+
+| File | What it is |
+|---|---|
+| `index.html` | The whole app |
+| `manifest.json`, `sw.js` | Let it install to your home screen and open like an app |
+| `icons/` | App icons |
+
+## Step 1: Put it online (free, about 10 minutes)
+
+The app needs an `https://` address so your phone will share its location. GitHub Pages is free and doesn't require any command line.
+
+1. Create a free account at **github.com**.
+2. Click **+ → New repository**. Name it `safe-plate`, set it to **Public**, and click **Create repository**.
+3. Click **uploading an existing file**. Drag in `index.html`, `manifest.json`, `sw.js`, `README.md` and the **`icons` folder**, then click **Commit changes**.
+4. Go to **Settings → Pages**. Under *Build and deployment*, choose **Deploy from a branch**, then **main** and **/ (root)**, and click **Save**.
+5. Wait 1–2 minutes. Your app is now at `https://YOUR-USERNAME.github.io/safe-plate/`
+
+Nothing secret is stored in these files. Your Google key (if you add one) lives only on your phone.
+
+## Step 2: Install it on your phone
+
+- **iPhone:** Open the link in **Safari**, tap **Share**, then **Add to Home Screen**.
+- **Android:** Open the link in **Chrome**, tap **⋮**, then **Install app** (or **Add to Home screen**).
+
+When it asks for your location, allow it.
+
+The app works right away using **OpenStreetMap**, with no key and no account.
+
+## Step 3 (optional): Turn on Google Maps results, capped at $0
+
+Google gives better coverage and includes reviews, which the app scans for "celiac," "dedicated fryer," "got sick" and similar phrases. Google requires a card on file, but the free monthly allowance is far more than one family uses. The caps below make sure you never go past it.
+
+1. Go to **console.cloud.google.com** and create a project (e.g. "Safe Plate").
+2. Set up **Billing** for the project (card required).
+3. Go to **APIs & Services → Library** and enable **Places API (New)** and **Maps JavaScript API**.
+4. Go to **APIs & Services → Credentials → Create credentials → API key**. Then edit the key:
+   - **Application restrictions:** *Websites*. Add `https://YOUR-USERNAME.github.io/*`
+   - **API restrictions:** *Restrict key* to **Places API (New)** and **Maps JavaScript API**.
+5. **Set a hard cap:** Go to **APIs & Services → Places API (New) → Quotas & System Limits**. Find the Text Search request limit (per day) and set it to **30**. Once the cap is hit, searches stop working until the next day. They don't start charging.
+   - Each search asks for reviews, which Google counts at its highest price level. That level includes 1,000 free requests a month, and 30 a day stays under it.
+6. Optionally, add a **budget alert** at $1 under **Billing → Budgets & alerts**. Alerts only email you; the quota in step 5 is what actually stops usage.
+7. In the app, open **Settings**, paste the key and tap **Save key**. Then choose **Both** on the Find tab.
+
+## How to use it
+
+- **Find:** Tap *Near me* or type a place. Results are ranked by gluten-free signals: dedicated GF tags, celiac and allergy-friendly mentions in reviews, and minus points for reported reactions or cross-contact. Each restaurant has one-tap links to its website, menu search, allergen-guide search, **Find Me Gluten Free**, **Reddit**, directions and phone number.
+- **Save** places to your **Shortlist**. Mark each one *Looks safe*, *Need to ask* or *Avoid*, and keep notes on safe dishes.
+- **Check menu:** Take a photo of a menu or allergen chart (read on the phone, free), or paste menu text. Red highlights are listed ingredients to avoid. Amber highlights are things that often hide allergens, like "vegetable oil" (often soy), sauces, marinades and shared fryers.
+- **Ask:** Questions to ask staff, plus a chef card you can show your server.
+- **Copy for Claude:** On the Shortlist tab, this copies a research request. Paste it into the *Celiac & Allergy Restaurant Finder* project in Claude for a deep multi-source check (menus, allergen charts, Reddit, Find Me Gluten Free) at no extra cost.
+
+## Good to know
+
+- **No app can promise a dish is safe.** Gluten-free tags and reviews almost never mention soy, peas, chickpeas or legumes. Treat results as leads, and confirm with the restaurant every time.
+- OpenStreetMap is edited by volunteers. Many restaurants are missing or have no gluten-free tag. Use *Also show restaurants with no gluten-free info* or **Both** to widen results. You can add tags yourself at openstreetmap.org (the "fix on OSM" link).
+- Google results appear in the list but not on the map, because Google's terms don't allow showing its data on a non-Google map.
+- The menu scanner matches words; it doesn't understand the menu. A clean result doesn't mean a dish is free of allergens. Oils, sauces and seasonings are rarely listed.
+- Your shortlist, notes and key are saved on this phone only. Clearing the browser's website data erases them.
+
+## Updating the app
+
+Upload the new `index.html` to the same GitHub repository (**Add file → Upload files**, replace). The installed app picks up the change the next time it opens with a connection.
