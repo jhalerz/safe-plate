@@ -1071,8 +1071,14 @@ $("#btnClearAll").onclick = e => {
 
 
 /* ---------------- recipes ---------------- */
-const DEFAULT_SITES = ["theloopywhisk.com"];
+const DEFAULT_SITES = ["theloopywhisk.com", "mamaknowsglutenfree.com", "glutenfreeonashoestring.com", "meaningfuleats.com"];
 const recipeSites = () => store.get("recipeSites", DEFAULT_SITES);
+// one-time: add the newer default sites to lists saved by earlier versions
+if (!store.get("sitesAdded110", false)){
+  const saved = store.get("recipeSites", null);
+  if (saved) store.set("recipeSites", [...new Set(saved.concat(DEFAULT_SITES))]);
+  store.set("sitesAdded110", true);
+}
 function renderRecipeSites(){
   $("#rSites").innerHTML = recipeSites().map(d => `<span class="badge b-info" style="font-size:13px;padding:5px 10px">${esc(d)} <a href="#" data-del="${esc(d)}" style="color:inherit;text-decoration:none;margin-left:4px" aria-label="Remove">✕</a></span>`).join("")
     || `<p class="note">No sites yet. Add one below.</p>`;
@@ -1170,7 +1176,7 @@ $("#recipeList").addEventListener("input", e => {
 renderRecipeSites(); renderRecipes();
 
 /* ---------------- version & updates ---------------- */
-const APP_VERSION = "1.9";
+const APP_VERSION = "1.10";
 $("#appVersion").textContent = APP_VERSION;
 async function forceUpdate(){
   $("#updateState").textContent = "Updating…";
