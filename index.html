@@ -90,6 +90,11 @@
   dialog{border:0;border-radius:var(--radius);padding:16px;max-width:560px;width:calc(100% - 24px);background:var(--card);color:var(--ink)}
   dialog::backdrop{background:rgba(0,0,0,.45)}
   .hide{display:none!important}
+  #reader{width:100%;border-radius:10px;overflow:hidden;margin:8px 0}
+  #reader video{border-radius:10px}
+  .prod{display:flex;gap:12px;align-items:flex-start}
+  .prod img{width:72px;height:72px;object-fit:contain;border-radius:8px;background:#fff;flex:0 0 auto}
+  .hours{font-size:13px;color:var(--muted);margin:-4px 0 8px}
 </style>
 </head>
 <body>
@@ -121,6 +126,8 @@
           </select>
         </div>
       </div>
+      <label class="chk"><input type="checkbox" id="fOpen"> Open now only</label>
+      <label class="chk"><input type="checkbox" id="fRisk"> Hide cuisines heavy in soy, beans or chickpeas</label>
     </div>
     <div class="warnbox hide" id="needKey">To search, add your Google Maps key in <a href="#" id="goSettings">Settings</a>.</div>
     <div class="status" id="status"></div>
@@ -143,6 +150,23 @@
 
   <!-- SCAN -->
   <section class="view" id="v-scan">
+    <div class="card">
+      <h2>Check a packaged food</h2>
+      <p class="note">Scan the barcode on a grocery item to see its ingredients and allergens from Open Food Facts, a free public product database.</p>
+      <div class="row" style="margin:10px 0">
+        <button class="btn" id="btnBarcode">▥ Scan barcode</button>
+        <label class="btn ghost" style="margin:0" for="barcodePhoto">Photo of barcode</label>
+        <input type="file" id="barcodePhoto" accept="image/*" class="hide">
+      </div>
+      <div id="reader" class="hide"></div>
+      <button class="btn ghost small hide" id="btnStopScan">Stop camera</button>
+      <div class="row" style="margin-top:8px">
+        <input type="text" id="barcodeText" inputmode="numeric" placeholder="…or type the barcode number" autocomplete="off">
+        <button class="btn ghost" id="btnBarcodeLookup" style="flex:0 0 auto">Look up</button>
+      </div>
+      <div class="status" id="barcodeStatus"></div>
+    </div>
+    <div id="productOut"></div>
     <div class="card">
       <h2>Check a menu</h2>
       <p class="note" id="scanFor"></p>
@@ -189,6 +213,18 @@
       <div class="status" id="keyStatus"></div>
     </div>
     <div class="card">
+      <h2>Back up or share your shortlist</h2>
+      <p class="note">Your shortlist is saved on this device only. Send a backup to another phone (like a family member's), or keep one somewhere safe. Your Google key is never included.</p>
+      <div class="row" style="margin-top:8px">
+        <button class="btn" id="btnShareBackup">Send backup</button>
+        <button class="btn ghost" id="btnCopyBackup">Copy backup</button>
+      </div>
+      <label for="restoreText" style="margin-top:12px">Restore: paste a backup here</label>
+      <textarea id="restoreText" placeholder="SAFEPLATE1:…" style="min-height:70px"></textarea>
+      <div class="row" style="margin-top:8px"><button class="btn ghost" id="btnRestore">Add to my shortlist</button></div>
+      <div class="status" id="backupStatus"></div>
+    </div>
+    <div class="card">
       <h2>Extra words to flag</h2>
       <p class="note">Add anything else the scanner should catch, separated by commas (e.g. sesame, mustard, corn).</p>
       <input type="text" id="extraTerms" placeholder="sesame, mustard">
@@ -229,6 +265,7 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt
 
 /* ---------------- tabs ---------------- */
 function showView(v){
+  if (v !== "scan" && typeof stopScanner === "function") stopScanner();
   document.querySelectorAll(".view").forEach(el => el.classList.toggle("on", el.id === "v-" + v));
   document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.v === v));
   if (v === "list") renderShortlist();
@@ -282,6 +319,8 @@ function scanText(text){
         // "gluten free" / "soy free" style mentions are not hits for the ingredient itself
         const after = text.slice(m.index + m[0].length, m.index + m[0].length + 8).toLowerCase();
         if (/^[\s-]*free/.test(after)) continue;
+        // "rice flour", "corn flour" etc. are naturally gluten-free
+        if (/^flours?$/i.test(m[0]) && /(rice|corn|tapioca|potato|sorghum|cassava|millet|teff|buckwheat|arrowroot|quinoa|amaranth)\s+$/i.test(text.slice(Math.max(0, m.index - 14), m.index))) continue;
         hits.push({start:m.index, end:m.index + m[0].length, level, group:g.name});
         found[g.name] = found[g.name] || new Map();
         const key = m[0].toLowerCase();
@@ -382,18 +421,66 @@ async function searchGoogle(lat, lon, radius){
   const { Place } = await google.maps.importLibrary("places");
   const { places } = await Place.searchByText({
     textQuery: "gluten free restaurant",
-    fields: ["id","displayName","formattedAddress","location","rating","userRatingCount","websiteURI","nationalPhoneNumber","googleMapsURI","reviews"],
+    fields: ["id","displayName","formattedAddress","location","rating","userRatingCount","websiteURI","nationalPhoneNumber","googleMapsURI","reviews",
+             "primaryType","types","regularOpeningHours","utcOffsetMinutes","businessStatus"],
     locationBias: { center: { lat, lng: lon }, radius: Math.min(radius, 50000) },
     maxResultCount: 20
   });
-  return (places || []).map(p => ({
-    id: "g:" + p.id, source: ["google"], name: p.displayName || "", lat: p.location?.lat(), lon: p.location?.lng(),
-    address: p.formattedAddress || "", phone: p.nationalPhoneNumber || "", website: p.websiteURI || "",
-    cuisine: "", gfTag: "", gfNote: "", otherDiet: [],
-    reviews: (p.reviews || []).map(r => ({ text: (r.text || ""), when: r.relativePublishTimeDescription || "" })).filter(r => r.text),
-    rating: p.rating ?? null, ratingCount: p.userRatingCount ?? null, mapsUrl: p.googleMapsURI || "", osmUrl: ""
-  })).filter(p => p.lat != null && distMeters(lat, lon, p.lat, p.lon) <= radius * 1.25);
+  const out = await Promise.all((places || []).filter(p => p.businessStatus !== "CLOSED_PERMANENTLY").map(async p => {
+    let openNow = null;
+    try{ if (p.regularOpeningHours) openNow = await p.isOpen(); }catch(e){}
+    return {
+      id: "g:" + p.id, source: ["google"], name: p.displayName || "", lat: p.location?.lat(), lon: p.location?.lng(),
+      address: p.formattedAddress || "", phone: p.nationalPhoneNumber || "", website: p.websiteURI || "",
+      cuisine: prettyType(p.primaryType), types: [p.primaryType].concat(p.types || []).filter(Boolean),
+      hoursWeek: p.regularOpeningHours?.weekdayDescriptions || [], openNow: typeof openNow === "boolean" ? openNow : null,
+      tempClosed: p.businessStatus === "CLOSED_TEMPORARILY",
+      gfTag: "", gfNote: "", otherDiet: [],
+      reviews: (p.reviews || []).map(r => ({ text: (r.text || ""), when: r.relativePublishTimeDescription || "" })).filter(r => r.text),
+      rating: p.rating ?? null, ratingCount: p.userRatingCount ?? null, mapsUrl: p.googleMapsURI || ""
+    };
+  }));
+  return out.filter(p => p.lat != null && distMeters(lat, lon, p.lat, p.lon) <= radius * 1.25);
 }
+const GENERIC_TYPES = new Set(["restaurant","food","point_of_interest","establishment","meal_takeaway","meal_delivery","store"]);
+function prettyType(t){
+  if (!t || GENERIC_TYPES.has(t)) return "";
+  const x = t.replace(/_/g, " ");
+  return x.charAt(0).toUpperCase() + x.slice(1);
+}
+function todayHours(week){
+  if (!week || !week.length) return "";
+  const line = week[(new Date().getDay() + 6) % 7] || "";   // Google lists Monday first
+  return line.replace(/^[^:]+:\s*/, "");
+}
+
+/* ---------------- cuisine risk + chains ---------------- */
+const CUISINE_RISK = [
+  { label: "Soy-heavy cuisine", tip: "Soy sauce, tofu, miso and edamame are common",
+    types: ["japanese_restaurant","sushi_restaurant","ramen_restaurant","chinese_restaurant","thai_restaurant","korean_restaurant",
+            "vietnamese_restaurant","asian_restaurant","indonesian_restaurant","asian_fusion_restaurant","dim_sum_restaurant","filipino_restaurant"],
+    words: /\b(sushi|ramen|hibachi|teriyaki|wok|pho|thai|szechuan|sichuan|dim sum|korean|poke|bento|izakaya|udon|noodle bar)\b/i },
+  { label: "Chickpea & lentil-heavy cuisine", tip: "Hummus, falafel, dal and chickpea flour are common",
+    types: ["indian_restaurant","middle_eastern_restaurant","mediterranean_restaurant","lebanese_restaurant","turkish_restaurant",
+            "greek_restaurant","afghani_restaurant","persian_restaurant","pakistani_restaurant","nepalese_restaurant"],
+    words: /\b(falafel|hummus|shawarma|kebab|kabob|tandoor|masala|curry|biryani|mediterranean|lebanese|persian|halal)\b/i },
+  { label: "Bean-heavy cuisine", tip: "Beans show up in many dishes and sides",
+    types: ["mexican_restaurant","latin_american_restaurant","brazilian_restaurant","tex_mex_restaurant","salvadoran_restaurant",
+            "cuban_restaurant","peruvian_restaurant","colombian_restaurant"],
+    words: /\b(taco|tacos|taqueria|burrito|cantina|mexican|tex[- ]mex|pupusa|cuban)\b/i },
+  { label: "Plant-based: soy, legumes & nuts common", tip: "Meat and cheese substitutes often use soy, pea protein or nuts",
+    types: ["vegan_restaurant","vegetarian_restaurant"], words: /\b(vegan|plant[- ]based)\b/i }
+];
+function cuisineRisks(p){
+  return CUISINE_RISK.filter(r => (p.types || []).some(t => r.types.includes(t)) || r.words.test(p.name));
+}
+// Chains usually publish an allergen chart. Names only; links go through the chain's own website.
+const CHAINS = /\b(chipotle|chick-?fil-?a|five guys|culver'?s|portillo'?s|panera|jason'?s deli|p\.?\s?f\.? chang'?s|red robin|outback|olive garden|buffalo wild wings|noodles (&|and) company|qdoba|taco bell|mcdonald'?s|wendy'?s|burger king|shake shack|smashburger|freddy'?s|texas roadhouse|longhorn steakhouse|carrabba'?s|maggiano'?s|cheesecake factory|bj'?s restaurant|chili'?s|applebee'?s|red lobster|mod pizza|blaze pizza|domino'?s|pizza hut|papa john'?s|jimmy john'?s|jersey mike'?s|subway|potbelly|sweetgreen|cava|panda express|starbucks|dunkin'?|lou malnati'?s|giordano'?s|moretti'?s|first watch|egg harbor|portillo|raising cane'?s|in-n-out|zoe'?s kitchen|crumbl|sonic drive-in|arby'?s|popeyes|kfc|white castle|steak 'n shake|jimmy john)\b/i;
+const CHAIN_WARNINGS = [
+  { re: /five guys/i, text: "Fries in peanut oil and serves peanuts" },
+  { re: /chick-?fil-?a/i, text: "Cooks chicken in peanut oil" }
+];
+function siteOf(url){ try{ return new URL(url).hostname.replace(/^www\./, ""); }catch(e){ return ""; } }
 
 /* ---------------- merge + score ---------------- */
 const SIGNALS = [
@@ -421,6 +508,11 @@ function score(p){
       }
     }
   }
+  for (const r of cuisineRisks(p)){ s -= 10; chips.push([r.label, "b-warn"]); }
+  p.isChain = CHAINS.test(p.name);
+  if (p.isChain){ s += 5; chips.push(["Chain: allergen chart likely", "b-info"]); }
+  for (const w of CHAIN_WARNINGS) if (w.re.test(p.name)){ s -= 30; chips.push([w.text + " (ask)", "b-bad"]); }
+  if (p.tempClosed) chips.push(["Temporarily closed", "b-bad"]);
   if (p.rating) s += (p.rating - 4) * 4;
   return { s, chips, snips };
 }
@@ -434,7 +526,9 @@ function links(p, city){
     maps: p.mapsUrl || `https://www.google.com/maps/search/?api=1&query=${q(p.name + " " + (p.address || where))}`,
     fmgf: g(`site:findmeglutenfree.com "${p.name}" ${where}`),
     reddit: g(`site:reddit.com "${p.name}" ${where} celiac OR "gluten free"`),
-    allergen: g(`"${p.name}" allergen menu OR "allergen guide" OR "allergy chart"`),
+    allergen: siteOf(p.website)
+      ? g(`site:${siteOf(p.website)} allergen OR allergy OR allergens OR nutrition`)
+      : g(`"${p.name}" allergen menu OR "allergen guide" OR "allergy chart"`),
     menu: g(`"${p.name}" ${where} menu`)
   };
 }
@@ -442,6 +536,10 @@ function links(p, city){
 /* ---------------- search flow ---------------- */
 let lastSearch = null;
 $("#radius").value = String(store.get("radius", "8047"));
+for (const id of ["fOpen", "fRisk"]){
+  $("#" + id).checked = store.get(id, false);
+  $("#" + id).onchange = () => { store.set(id, $("#" + id).checked); applyFilters(); };   // no new Google search
+}
 $("#radius").onchange = () => { store.set("radius", $("#radius").value); if (lastSearch) runSearch(lastSearch.lat, lastSearch.lon, lastSearch.city); };
 
 function setStatus(msg, err){ const el = $("#status"); el.textContent = msg; el.classList.toggle("err", !!err); }
@@ -483,11 +581,20 @@ async function runSearch(lat, lon, city){
   catch(e){ setStatus(e.message, true); $("#map").style.display = "none"; return; }
   places = places.map(p => { p.dist = distMeters(lat, lon, p.lat, p.lon); Object.assign(p, score(p)); return p; });
   places.sort((a, b) => b.s - a.s || a.dist - b.dist);
-  places.forEach((p, i) => p.rank = i + 1);
-  lastResults = places;
-  renderResults(places, city);
-  drawMap(lat, lon, places);
-  setStatus(`${places.length} place${places.length === 1 ? "" : "s"} within ${miles(radius)}`);
+  lastAll = places; lastRadius = radius;
+  applyFilters();
+}
+let lastAll = [], lastRadius = 0;
+function applyFilters(){
+  if (!lastSearch) return;
+  const fOpen = $("#fOpen").checked, fRisk = $("#fRisk").checked;
+  const shown = lastAll.filter(p => !(fOpen && p.openNow === false) && !(fRisk && cuisineRisks(p).length));
+  shown.forEach((p, i) => p.rank = i + 1);
+  lastResults = shown;
+  renderResults(shown, lastSearch.city);
+  drawMap(lastSearch.lat, lastSearch.lon, shown);
+  const hidden = lastAll.length - shown.length;
+  setStatus(`${shown.length} place${shown.length === 1 ? "" : "s"} within ${miles(lastRadius)}` + (hidden ? ` (${hidden} hidden by your filters)` : ""));
 }
 
 let lastResults = [];
@@ -498,6 +605,8 @@ function cardHTML(p, city, inList){
   <div class="card" data-id="${esc(p.id)}">
     <h3>${p.rank ? p.rank + ". " : ""}${esc(p.name)}</h3>
     <div class="meta">${p.dist != null ? miles(p.dist) + " · " : ""}${esc(p.address || "")}${p.cuisine ? " · " + esc(p.cuisine) : ""}${p.rating ? ` · ★ ${p.rating} (${p.ratingCount})` : ""}</div>
+    ${!inList && todayHours(p.hoursWeek) ? `<div class="hours">${p.openNow === true ? "🟢 Open now" : p.openNow === false ? "⚪ Closed now" : ""}${p.openNow != null ? " · " : ""}Today: ${esc(todayHours(p.hoursWeek))}</div>` : ""}
+    ${inList && todayHours(p.hoursWeek) ? `<div class="hours">Today: ${esc(todayHours(p.hoursWeek))}</div>` : ""}
     <div>${(p.chips || []).map(([t, c]) => `<span class="badge ${c}">${esc(t)}</span>`).join("")}</div>
     ${p.gfNote ? `<div class="snip">${esc(p.gfNote)}</div>` : ""}
     ${(p.snips || []).map(s => `<div class="snip">“${esc(s)}”</div>`).join("")}
@@ -507,7 +616,7 @@ function cardHTML(p, city, inList){
       <button data-act="claude">Copy for Claude</button>
       ${p.website ? `<a href="${esc(p.website)}" target="_blank" rel="noopener">Website</a>` : ""}
       <a href="${esc(L.menu)}" target="_blank" rel="noopener">Find menu</a>
-      <a href="${esc(L.allergen)}" target="_blank" rel="noopener">Allergen guide</a>
+      <a href="${esc(L.allergen)}" target="_blank" rel="noopener">${p.isChain && p.website ? "Official allergen chart" : "Allergen guide"}</a>
       <a href="${esc(L.fmgf)}" target="_blank" rel="noopener">Find Me GF</a>
       <a href="${esc(L.reddit)}" target="_blank" rel="noopener">Reddit</a>
       <a href="${esc(L.maps)}" target="_blank" rel="noopener">Directions</a>
@@ -534,10 +643,14 @@ $("#results").addEventListener("click", e => {
 
 /* ---------------- shortlist ---------------- */
 const shortlist = () => store.get("shortlist", {});
+function leanRecord(p, extra){
+  const { reviews, rank, dist, openNow, s: _score, ...rest } = p;
+  return { ...rest, city: lastSearch?.city || p.city || "", savedAt: Date.now(), updatedAt: Date.now(), ...extra };
+}
 function toggleSave(p){
   const s = shortlist();
   if (s[p.id]) delete s[p.id];
-  else s[p.id] = { ...p, city: lastSearch?.city || "", status: "", notes: "", savedAt: Date.now() };
+  else s[p.id] = leanRecord(p, { status: "", notes: "" });
   store.set("shortlist", s);
 }
 function renderShortlist(){
@@ -560,7 +673,7 @@ $("#shortlist").addEventListener("click", e => {
   const card = e.target.closest(".card"); if (!card) return;
   const id = card.dataset.id; const s = shortlist(); const p = s[id]; if (!p) return;
   const st = e.target.closest("button[data-st]");
-  if (st){ p.status = p.status === st.dataset.st ? "" : st.dataset.st; store.set("shortlist", s); renderShortlist(); return; }
+  if (st){ p.status = p.status === st.dataset.st ? "" : st.dataset.st; p.updatedAt = Date.now(); store.set("shortlist", s); renderShortlist(); return; }
   const b = e.target.closest("button[data-act]"); if (!b) return;
   if (b.dataset.act === "remove"){ delete s[id]; store.set("shortlist", s); renderShortlist(); }
   if (b.dataset.act === "scan") openScanFor(p);
@@ -569,7 +682,7 @@ $("#shortlist").addEventListener("click", e => {
 $("#shortlist").addEventListener("input", e => {
   if (!e.target.matches("textarea[data-notes]")) return;
   const id = e.target.closest(".card").dataset.id; const s = shortlist();
-  if (s[id]){ s[id].notes = e.target.value; store.set("shortlist", s); }
+  if (s[id]){ s[id].notes = e.target.value; s[id].updatedAt = Date.now(); store.set("shortlist", s); }
 });
 
 /* ---------------- copy helpers ---------------- */
@@ -626,7 +739,8 @@ function showScan(text, how){
   const nb = $("#btnNoteScan");
   if (nb) nb.onclick = () => {
     const s = shortlist();
-    if (!s[scanTarget.id]) s[scanTarget.id] = { ...scanTarget, city: lastSearch?.city || "", status: "ask", notes: "", savedAt: Date.now() };
+    if (!s[scanTarget.id]) s[scanTarget.id] = leanRecord(scanTarget, { status: "ask", notes: "" });
+    s[scanTarget.id].updatedAt = Date.now();
     const flagged = groups.map(([g, m]) => g + ": " + [...m.keys()].join(", ")).join("; ") || "no avoid-list words found";
     s[scanTarget.id].notes = (s[scanTarget.id].notes ? s[scanTarget.id].notes + "\n" : "") + `Menu check ${new Date().toLocaleDateString()}: ${flagged}`;
     store.set("shortlist", s); flash(nb, "Added ✓");
@@ -667,6 +781,112 @@ $("#photo").onchange = async e => {
   e.target.value = "";
 };
 
+
+/* ---------------- barcode scanner (Open Food Facts) ---------------- */
+let qrLoading = null, scanner = null;
+function loadScanner(){
+  if (window.Html5Qrcode) return Promise.resolve();
+  if (qrLoading) return qrLoading;
+  qrLoading = new Promise((res, rej) => {
+    const s = document.createElement("script");
+    s.src = "https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js";
+    s.onload = res; s.onerror = () => { qrLoading = null; rej(new Error("Couldn't load the barcode reader. Check your connection.")); };
+    document.head.appendChild(s);
+  });
+  return qrLoading;
+}
+function barcodeFormats(){
+  const F = window.Html5QrcodeSupportedFormats;
+  return F ? [F.EAN_13, F.EAN_8, F.UPC_A, F.UPC_E] : undefined;
+}
+async function stopScanner(){
+  try{ if (scanner && scanner.isScanning) await scanner.stop(); }catch(e){}
+  $("#reader").classList.add("hide"); $("#btnStopScan").classList.add("hide");
+}
+$("#btnStopScan").onclick = stopScanner;
+$("#btnBarcode").onclick = async () => {
+  const st = $("#barcodeStatus");
+  try{
+    st.textContent = "Starting camera…";
+    await loadScanner();
+    $("#reader").classList.remove("hide"); $("#btnStopScan").classList.remove("hide");
+    if (!scanner) scanner = new Html5Qrcode("reader", { formatsToSupport: barcodeFormats(), verbose: false });
+    await scanner.start({ facingMode: "environment" }, { fps: 10, qrbox: { width: 260, height: 130 } }, async code => {
+      await stopScanner();
+      $("#barcodeText").value = code;
+      lookupProduct(code);
+    }, () => {});
+    st.textContent = "Point the camera at the barcode.";
+  }catch(err){
+    await stopScanner();
+    st.textContent = (err && err.message ? err.message : String(err || "")) .includes("ermission")
+      ? "Camera permission was denied. Allow camera access for this site, or use Photo of barcode."
+      : "Couldn't start the camera. Try Photo of barcode, or type the number.";
+  }
+};
+$("#barcodePhoto").onchange = async e => {
+  const file = e.target.files[0]; if (!file) return;
+  const st = $("#barcodeStatus");
+  try{
+    st.textContent = "Reading barcode…";
+    await loadScanner();
+    const tmp = new Html5Qrcode("reader", { formatsToSupport: barcodeFormats(), verbose: false });
+    const code = await tmp.scanFile(file, false);
+    $("#barcodeText").value = code;
+    lookupProduct(code);
+  }catch(err){ st.textContent = "Couldn't find a barcode in that photo. Try a closer, sharper photo, or type the number."; }
+  e.target.value = "";
+};
+$("#btnBarcodeLookup").onclick = () => lookupProduct($("#barcodeText").value);
+$("#barcodeText").addEventListener("keydown", e => { if (e.key === "Enter") lookupProduct($("#barcodeText").value); });
+
+const OFF_ALLERGENS = {
+  "en:gluten": ["Gluten", true], "en:peanuts": ["Peanuts", true], "en:nuts": ["Tree nuts", true],
+  "en:soybeans": ["Soy", true], "en:lupin": ["Lupin (legume)", true], "en:milk": ["Milk", false], "en:eggs": ["Eggs", false],
+  "en:sesame-seeds": ["Sesame", false], "en:fish": ["Fish", false], "en:crustaceans": ["Shellfish", false],
+  "en:molluscs": ["Molluscs", false], "en:mustard": ["Mustard", false], "en:celery": ["Celery", false],
+  "en:sulphur-dioxide-and-sulphites": ["Sulphites", false]
+};
+const tagName = t => (OFF_ALLERGENS[t] || [t.replace(/^\w\w:/, "").replace(/-/g, " "), false]);
+async function lookupProduct(raw){
+  const code = String(raw || "").replace(/\D/g, "");
+  const st = $("#barcodeStatus"), out = $("#productOut");
+  if (code.length < 8){ st.textContent = "Barcodes are usually 8–13 digits."; return; }
+  st.textContent = "Looking up " + code + "…"; out.innerHTML = "";
+  try{
+    const r = await fetch(`https://world.openfoodfacts.org/api/v2/product/${code}.json?fields=code,product_name,brands,ingredients_text,ingredients_text_en,allergens_tags,traces_tags,labels_tags,image_front_small_url`);
+    const j = await r.json();
+    if (!j || j.status !== 1 || !j.product){
+      st.textContent = "";
+      out.innerHTML = `<div class="card"><h2>Not found</h2><p>Barcode ${esc(code)} isn't in Open Food Facts yet. Read the package's ingredient list, or take a photo of it with <b>Photo of menu</b> below to have it checked.</p></div>`;
+      return;
+    }
+    st.textContent = "";
+    const pr = j.product;
+    const ingr = (pr.ingredients_text_en || pr.ingredients_text || "").trim();
+    const al = (pr.allergens_tags || []).map(tagName), tr = (pr.traces_tags || []).map(tagName);
+    const gfLabel = (pr.labels_tags || []).some(t => /gluten-free|no-gluten|sans-gluten/.test(t));
+    const scan = ingr ? scanText(ingr) : null;
+    const found = scan ? Object.entries(scan.found) : [];
+    const red = found.filter(([, m]) => [...m.values()].includes("c")).map(([g]) => g);
+    const badges = list => list.map(([n, mine]) => `<span class="badge ${mine ? "b-bad" : "b-mute"}">${esc(n)}</span>`).join("");
+    out.innerHTML = `
+      <div class="card">
+        <div class="prod">
+          ${pr.image_front_small_url ? `<img src="${esc(pr.image_front_small_url)}" alt="">` : ""}
+          <div><h3>${esc(pr.product_name || "Unnamed product")}</h3><div class="meta">${esc(pr.brands || "")} · ${esc(code)}</div>
+          ${gfLabel ? `<span class="badge b-good">Labeled gluten-free</span>` : `<span class="badge b-mute">No gluten-free label listed</span>`}</div>
+        </div>
+        <div class="grp"><b>Contains (listed allergens):</b> ${al.length ? badges(al) : `<span class="note">none listed</span>`}</div>
+        <div class="grp"><b>May contain:</b> ${tr.length ? tr.map(([n, mine]) => `<span class="badge ${mine ? "b-warn" : "b-mute"}">${esc(n)}</span>`).join("") : `<span class="note">none listed</span>`}</div>
+        <div class="grp"><b>From the ingredient list:</b> ${!ingr ? `<span class="note">no ingredient list in the database</span>` :
+          red.length ? red.map(g => `<span class="badge b-bad">${esc(g)}</span>`).join("") : `<span class="note">no avoid-list words found</span>`}</div>
+        <p class="note" style="margin-top:8px">Peas, chickpeas, beans and lentils aren't standard label allergens, so check the highlighted ingredients below. Product data is crowd-sourced and recipes change, so always confirm on the package.</p>
+      </div>
+      ${ingr ? `<div class="card"><h2>Ingredients</h2><div class="scantext">${scan.html}</div></div>` : ""}`;
+  }catch(err){ st.textContent = "Couldn't reach Open Food Facts. Check your connection and try again."; }
+}
+
 /* ---------------- ask script ---------------- */
 const ASK = [
   "Do you have a gluten-free menu, and is anything prepared in a separate area for celiac guests?",
@@ -696,6 +916,49 @@ Thank you so much!`;
 $("#chefCard").textContent = CHEF;
 $("#btnCopyAsk").onclick = async e => { if (await copyText(ASK.map((q, i) => `${i + 1}. ${q}`).join("\n"))) flash(e.target, "Copied ✓"); };
 $("#btnCopyChef").onclick = async e => { if (await copyText(CHEF)) flash(e.target, "Copied ✓"); };
+
+
+/* ---------------- backup & share ---------------- */
+function makeBackup(){
+  const data = { v: 1, at: Date.now(), shortlist: shortlist(), extraTerms: store.get("extraTerms", "") };
+  return "SAFEPLATE1:" + btoa(unescape(encodeURIComponent(JSON.stringify(data))));
+}
+function readBackup(text){
+  const m = String(text).match(/SAFEPLATE1:([A-Za-z0-9+/=\s]+)/);
+  if (!m) throw new Error("That doesn't look like a Safe Plate backup. Paste the whole thing, starting with SAFEPLATE1:");
+  const data = JSON.parse(decodeURIComponent(escape(atob(m[1].replace(/\s/g, "")))));
+  if (!data || data.v !== 1 || typeof data.shortlist !== "object") throw new Error("This backup couldn't be read.");
+  return data;
+}
+$("#btnCopyBackup").onclick = async e => {
+  if (!Object.keys(shortlist()).length){ flash(e.target, "Shortlist is empty"); return; }
+  if (await copyText(makeBackup())) flash(e.target, "Copied ✓");
+};
+$("#btnShareBackup").onclick = async e => {
+  if (!Object.keys(shortlist()).length){ flash(e.target, "Shortlist is empty"); return; }
+  const text = makeBackup();
+  if (navigator.share){
+    try{ await navigator.share({ title: "Safe Plate shortlist", text }); return; }
+    catch(err){ if (err && err.name === "AbortError") return; }
+  }
+  if (await copyText(text)) flash(e.target, "Copied ✓");
+};
+$("#btnRestore").onclick = () => {
+  const st = $("#backupStatus");
+  try{
+    const data = readBackup($("#restoreText").value);
+    const mine = shortlist(); let added = 0, updated = 0;
+    for (const [id, rec] of Object.entries(data.shortlist)){
+      if (!mine[id]){ mine[id] = rec; added++; }
+      else if ((rec.updatedAt || rec.savedAt || 0) > (mine[id].updatedAt || mine[id].savedAt || 0)){ mine[id] = rec; updated++; }
+    }
+    store.set("shortlist", mine);
+    if (data.extraTerms && !store.get("extraTerms", "")){ store.set("extraTerms", data.extraTerms); $("#extraTerms").value = data.extraTerms; }
+    st.classList.remove("err");
+    st.textContent = `Done: ${added} added, ${updated} updated with newer notes. Open the Shortlist tab to see them.`;
+    $("#restoreText").value = "";
+  }catch(err){ st.classList.add("err"); st.textContent = err.message || "Couldn't read that backup."; }
+};
 
 /* ---------------- settings ---------------- */
 $("#gkey").value = store.get("gkey", "");

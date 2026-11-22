@@ -50,10 +50,18 @@ Google provides the restaurants and reviews, which the app scans for "celiac," "
 
 - **Find:** Tap *Near me* or type a place. Results come from Google Maps, numbered to match the map, and are ranked by gluten-free signals in reviews (dedicated GF, celiac, allergy-friendly), with minus points for reported reactions or cross-contact. Each restaurant has one-tap links to its website, menu search, allergen-guide search, **Find Me Gluten Free**, **Reddit**, directions and phone number.
 - **Copy for Claude** on any restaurant copies a research request for just that place. Paste it into the *Celiac & Allergy Restaurant Finder* project in Claude for a free AI summary of its menu, allergen info, reviews, Reddit and Find Me Gluten Free.
+- **Filters:** *Open now only* hides closed places, and *Hide cuisines heavy in soy, beans or chickpeas* hides Japanese, Chinese, Thai, Korean, Indian, Middle Eastern, Mexican and vegan spots. Changing a filter doesn't use another Google search.
+- **Cuisine and chain badges:** Amber badges warn about soy-, bean- or chickpea-heavy cuisines. Chains get an **Official allergen chart** link that searches the chain's own website. Five Guys and Chick-fil-A are flagged for peanut oil.
+- **Hours:** Each result shows whether it's open now and today's hours.
 - **Save** places to your **Shortlist**. Mark each one *Looks safe*, *Need to ask* or *Avoid*, and keep notes on safe dishes.
+- **Check a packaged food:** On the Check menu tab, scan a grocery barcode (or take a photo of it, or type the number). The app looks it up in Open Food Facts, a free crowd-sourced database, and shows listed allergens, "may contain" warnings, gluten-free labels and the ingredient list with your avoid words highlighted.
 - **Check menu:** Take a photo of a menu or allergen chart (read on the phone, free), or paste menu text. Red highlights are listed ingredients to avoid. Amber highlights are things that often hide allergens, like "vegetable oil" (often soy), sauces, marinades and shared fryers.
 - **Ask:** Questions to ask staff, plus a chef card you can show your server.
 - **Copy for Claude:** On the Shortlist tab, this copies a research request. Paste it into the *Celiac & Allergy Restaurant Finder* project in Claude for a deep multi-source check (menus, allergen charts, Reddit, Find Me Gluten Free) at no extra cost.
+
+## Backup and sharing
+
+In **Settings → Back up or share your shortlist**, tap **Send backup** to text or email your shortlist to another phone. On that phone, paste it into **Restore** and tap **Add to my shortlist**. Restoring adds new places and updates ones with newer notes; it never deletes anything. Your Google key is never included.
 
 ## Good to know
 
