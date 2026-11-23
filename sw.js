@@ -1,5 +1,5 @@
 // Caches the app shell so it opens fast and works offline (search itself needs a connection).
-const CACHE = "safe-plate-v12";
+const CACHE = "safe-plate-v14";
 const SHELL = ["./", "index.html", "manifest.json", "icon-192.png", "icon-512.png", "apple-touch-icon.png"];
 
 self.addEventListener("install", e => {
