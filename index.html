@@ -131,6 +131,9 @@
           </select>
         </div>
       </div>
+      <label style="margin-top:12px">Look for</label>
+      <div class="statusSel" id="qTypes" style="flex-wrap:wrap;margin-top:2px"></div>
+      <p class="note" style="margin:2px 0 4px">Each type is its own Google search (up to 20 places), so it can find places the general search misses.</p>
       <label class="chk"><input type="checkbox" id="fOpen"> Open now only</label>
       <label class="chk"><input type="checkbox" id="fRisk"> Hide cuisines heavy in soy, beans or chickpeas</label>
       <div id="cuisineWrap" class="hide" style="margin-top:10px">
@@ -466,13 +469,54 @@ function loadGoogle(key){
   googleLoading.catch(() => { googleLoading = null; });
   return googleLoading;
 }
-async function searchGoogle(lat, lon, radius){
+/* Google web service: supports up to 60 results via "Show more". Falls back to the JS library if it can't be reached. */
+let restBlocked = false;
+const REST_FIELDS = ["places.id","places.displayName","places.formattedAddress","places.location","places.rating","places.userRatingCount",
+  "places.websiteUri","places.nationalPhoneNumber","places.googleMapsUri","places.reviews","places.primaryType","places.primaryTypeDisplayName",
+  "places.types","places.regularOpeningHours","places.currentOpeningHours","places.businessStatus","nextPageToken"].join(",");
+async function searchPlaces(lat, lon, radius, query, pageToken){
   const key = store.get("gkey", "");
   if (!key) throw new Error("Add a Google API key in Settings to use Google results.");
+  if (!restBlocked){
+    const body = { textQuery: query || "gluten free restaurant", pageSize: 20,
+      locationBias: { circle: { center: { latitude: lat, longitude: lon }, radius: Math.min(radius, 50000) } } };
+    if (pageToken) body.pageToken = pageToken;
+    let r;
+    try{
+      r = await fetch("https://places.googleapis.com/v1/places:searchText", { method: "POST",
+        headers: { "Content-Type": "application/json", "X-Goog-Api-Key": key, "X-Goog-FieldMask": REST_FIELDS }, body: JSON.stringify(body) });
+    }catch(e){ restBlocked = true; }            // network/CORS problem: use the JS library instead
+    if (r){
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok){
+        const msg = j.error?.message || "";
+        if (r.status === 403 && /referer|referrer|blocked|not authorized|API key/i.test(msg))
+          throw new Error("Google rejected the API key. Check its website restriction and that Places API (New) is allowed.");
+        throw new Error("Google search failed" + (msg ? ": " + msg : ` (${r.status})`));
+      }
+      const places = (j.places || []).filter(p => p.businessStatus !== "CLOSED_PERMANENTLY").map(p => ({
+        id: "g:" + p.id, source: ["google"], name: p.displayName?.text || "", lat: p.location?.latitude, lon: p.location?.longitude,
+        address: p.formattedAddress || "", phone: p.nationalPhoneNumber || "", website: p.websiteUri || "",
+        cuisine: cuisineOf(p.primaryType, p.primaryTypeDisplayName?.text, p.types), types: [p.primaryType].concat(p.types || []).filter(Boolean),
+        hoursWeek: p.regularOpeningHours?.weekdayDescriptions || [],
+        openNow: typeof p.currentOpeningHours?.openNow === "boolean" ? p.currentOpeningHours.openNow : null,
+        tempClosed: p.businessStatus === "CLOSED_TEMPORARILY",
+        gfTag: "", gfNote: "", otherDiet: [],
+        reviews: (p.reviews || []).map(rv => ({ text: rv.text?.text || rv.originalText?.text || "", when: rv.relativePublishTimeDescription || "" })).filter(rv => rv.text),
+        rating: p.rating ?? null, ratingCount: p.userRatingCount ?? null, mapsUrl: p.googleMapsUri || ""
+      })).filter(p => p.lat != null && distMeters(lat, lon, p.lat, p.lon) <= radius * 1.25);
+      return { places, next: j.nextPageToken || null };
+    }
+  }
+  if (pageToken) return { places: [], next: null };
+  return { places: await searchGoogleJS(lat, lon, radius, query), next: null };
+}
+async function searchGoogleJS(lat, lon, radius, query){
+  const key = store.get("gkey", "");
   await loadGoogle(key);
   const { Place } = await google.maps.importLibrary("places");
   const { places } = await Place.searchByText({
-    textQuery: "gluten free restaurant",
+    textQuery: query || "gluten free restaurant",
     fields: ["id","displayName","formattedAddress","location","rating","userRatingCount","websiteURI","nationalPhoneNumber","googleMapsURI","reviews",
              "primaryType","primaryTypeDisplayName","types","regularOpeningHours","utcOffsetMinutes","businessStatus"],
     locationBias: { center: { lat, lng: lon }, radius: Math.min(radius, 50000) },
@@ -635,22 +679,68 @@ async function searchTyped(){
 $("#btnPlace").onclick = searchTyped;
 $("#place").addEventListener("keydown", e => { if (e.key === "Enter") searchTyped(); });
 
+const QUICK_TYPES = [
+  ["any", "Any", "gluten free restaurant"],
+  ["dedicated", "100% GF", "dedicated 100% gluten free restaurant OR bakery"],
+  ["pizza", "Pizza", "gluten free pizza"],
+  ["italian", "Italian", "gluten free italian restaurant"],
+  ["burgers", "Burgers", "gluten free burgers"],
+  ["breakfast", "Breakfast", "gluten free breakfast brunch"],
+  ["bakery", "Bakery", "gluten free bakery"],
+  ["mexican", "Mexican", "gluten free mexican restaurant"],
+  ["steak", "Steak & seafood", "gluten free steakhouse seafood restaurant"],
+  ["dessert", "Dessert", "gluten free dessert ice cream"]
+];
+let quickType = "any";
+function renderQuickTypes(){
+  $("#qTypes").innerHTML = QUICK_TYPES.map(([id, label]) =>
+    `<button data-q="${id}" class="s-safe ${id === quickType ? "on" : ""}" style="flex:0 0 auto;padding:6px 10px">${esc(label)}</button>`).join("");
+}
+$("#qTypes").addEventListener("click", e => {
+  const b = e.target.closest("button[data-q]"); if (!b) return;
+  quickType = b.dataset.q; renderQuickTypes();
+  if (lastSearch) runSearch(lastSearch.lat, lastSearch.lon, lastSearch.city);   // same place, new type
+  else if ($("#place").value.trim()) searchTyped();
+  else $("#btnLocate").click();
+});
+renderQuickTypes();
 async function runSearch(lat, lon, city){
   lastSearch = { lat, lon, city };
+  const qt = QUICK_TYPES.find(t => t[0] === quickType) || QUICK_TYPES[0];
   if (!store.get("gkey", "")){ setStatus("Add your Google Maps key in Settings to search.", true); return; }
   const radius = +$("#radius").value;
-  setStatus("Searching Google Maps…");
+  setStatus(quickType === "any" ? "Searching Google Maps…" : `Searching Google Maps for ${qt[1].toLowerCase()}…`);
   $("#results").innerHTML = "";
   let places;
-  try{ places = await searchGoogle(lat, lon, radius); }
-  catch(e){ setStatus(e.message, true); $("#map").style.display = "none"; return; }
+  nextPage = null; nextQuery = qt[2];
+  try{ const res = await searchPlaces(lat, lon, radius, qt[2]); places = res.places; nextPage = res.next; }
+  catch(e){ setStatus(e.message, true); $("#map").style.display = "none"; updateMoreButton(); return; }
   places = places.map(p => { p.dist = distMeters(lat, lon, p.lat, p.lon); Object.assign(p, score(p)); return p; });
   places.sort((a, b) => b.s - a.s || a.dist - b.dist);
-  lastAll = places; lastRadius = radius;
+  lastAll = places; lastRadius = radius; lastTypeLabel = quickType === "any" ? "" : qt[1];
   buildCuisineMenu();
   applyFilters();
 }
-let lastAll = [], lastRadius = 0;
+let lastAll = [], lastRadius = 0, lastTypeLabel = "", nextPage = null, nextQuery = "";
+function updateMoreButton(){
+  const b = $("#btnMore"); if (!b) return;
+  b.classList.toggle("hide", !nextPage); b.disabled = false; b.textContent = "Show more results";
+}
+async function showMore(){
+  if (!nextPage || !lastSearch) return;
+  const b = $("#btnMore"); b.disabled = true; b.textContent = "Loading…";
+  const { lat, lon } = lastSearch;
+  try{
+    const res = await searchPlaces(lat, lon, lastRadius, nextQuery, nextPage);
+    nextPage = res.next;
+    const seen = new Set(lastAll.map(p => p.id));
+    const added = res.places.filter(p => !seen.has(p.id)).map(p => { p.dist = distMeters(lat, lon, p.lat, p.lon); Object.assign(p, score(p)); return p; });
+    lastAll = lastAll.concat(added).sort((a, b) => b.s - a.s || a.dist - b.dist);
+    buildCuisineMenu(); applyFilters();
+    if (!added.length && !nextPage) setStatus($("#status").textContent + " · No more results.");
+  }catch(e){ setStatus(e.message, true); nextPage = null; }
+  updateMoreButton();
+}
 function buildCuisineMenu(){
   const sel = $("#fCuisine"), keep = sel.value, counts = {};
   for (const p of lastAll){ const c = p.cuisine || "Other"; counts[c] = (counts[c] || 0) + 1; }
@@ -670,7 +760,7 @@ function applyFilters(){
   renderResults(shown, lastSearch.city);
   drawMap(lastSearch.lat, lastSearch.lon, shown);
   const hidden = lastAll.length - shown.length;
-  setStatus(`${shown.length} place${shown.length === 1 ? "" : "s"} within ${miles(lastRadius)}` + (hidden ? ` (${hidden} hidden by your filters)` : ""));
+  setStatus(`${shown.length}${lastTypeLabel ? " " + lastTypeLabel.toLowerCase() : ""} place${shown.length === 1 ? "" : "s"} within ${miles(lastRadius)}` + (hidden ? ` (${hidden} hidden by your filters)` : ""));
 }
 
 let lastResults = [];
@@ -703,10 +793,17 @@ function cardHTML(p, city, inList){
 }
 function renderResults(places, city){
   const box = $("#results");
-  if (!places.length){ box.innerHTML = `<div class="empty">No gluten-free matches nearby. Try a bigger distance or a different place.</div>`; return; }
+  if (!places.length){
+    box.innerHTML = `<div class="empty">No matches with these filters. Try a bigger distance, another type, or fewer filters.</div>` +
+      `<button class="btn ghost hide" id="btnMore" style="width:100%;margin:4px 0 10px">Show more results</button>`;
+    $("#btnMore").onclick = showMore; updateMoreButton(); return;
+  }
   box.innerHTML = `<div class="warnbox">These are <b>leads, not guarantees</b>. Reviews say little about soy, peas, chickpeas, legumes or nuts. Check each menu and ask the restaurant.</div>` +
     places.map(p => cardHTML(p, city, false)).join("") +
-    `<div class="src">Results from Google Maps.</div>`;
+    `<button class="btn ghost hide" id="btnMore" style="width:100%;margin:4px 0 10px">Show more results</button>` +
+    `<div class="src">Results from Google Maps. "Show more" counts as another search.</div>`;
+  $("#btnMore").onclick = showMore;
+  updateMoreButton();
 }
 $("#results").addEventListener("click", e => {
   const b = e.target.closest("button[data-act]"); if (!b) return;
@@ -1176,7 +1273,7 @@ $("#recipeList").addEventListener("input", e => {
 renderRecipeSites(); renderRecipes();
 
 /* ---------------- version & updates ---------------- */
-const APP_VERSION = "1.10";
+const APP_VERSION = "1.12";
 $("#appVersion").textContent = APP_VERSION;
 async function forceUpdate(){
   $("#updateState").textContent = "Updating…";
