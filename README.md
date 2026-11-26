@@ -66,7 +66,13 @@ Google provides the restaurants and reviews, which the app scans for "celiac," "
 
 ## Backup and sharing
 
-In **Settings → Back up or share your shortlist**, tap **Send backup** to text or email your shortlist to another phone. On that phone, paste it into **Restore** and tap **Add to my shortlist**. Restoring adds new places and updates ones with newer notes; it never deletes anything. Your Google key is never included.
+In **Settings → Back up or share your shortlist**, tap **Send backup** to text or email your shortlist and recipe box to another phone. On that phone, paste it into **Restore** and tap **Add to my shortlist**. Restoring adds new items and updates ones with newer notes; it never deletes anything.
+
+Turn on **Include my Google key in the backup** to also carry the key, which makes setting up a new phone, or recovering after the phone clears the app's data, a one-step job. Only send key backups to your own or family phones.
+
+## If the app forgets your key
+
+iPhones sometimes clear a web app's saved data. The app asks the phone to keep its data, and Settings shows whether the phone agreed. If the key is ever missing, a **Google key needed** box appears at the top of the Find screen: tap **Paste** (keep the key in your password manager) or restore a backup that includes the key. Also make sure you open the app from the home-screen icon, since Safari and Chrome tabs keep separate storage.
 
 ## Good to know
 

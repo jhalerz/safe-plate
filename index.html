@@ -110,6 +110,14 @@
       <span>A new version of Safe Plate is ready.</span>
       <button class="btn small" id="btnUpdateBanner" style="flex:0 0 auto">Update now</button>
     </div>
+    <div class="warnbox hide" id="needKey">
+      <b>Google key needed.</b> Paste your Google Maps key to search (keep it in your password manager for quick pasting), or restore a backup in <a href="#" id="goSettings">Settings</a>.
+      <div class="row" style="margin-top:8px">
+        <input type="password" id="quickKey" placeholder="AIza…" autocomplete="off" style="flex:1 1 140px">
+        <button class="btn ghost small" id="btnPasteKey" style="flex:0 0 auto">Paste</button>
+        <button class="btn small" id="btnQuickSave" style="flex:0 0 auto">Save</button>
+      </div>
+    </div>
     <button class="btn ghost" id="btnQuickScan" style="width:100%;margin:0 0 12px;padding:13px">▥ Scan a grocery item</button>
     <div class="card">
       <div class="row" style="margin-bottom:8px">
@@ -141,7 +149,6 @@
         <select id="fCuisine"><option value="">All cuisines</option></select>
       </div>
     </div>
-    <div class="warnbox hide" id="needKey">To search, add your Google Maps key in <a href="#" id="goSettings">Settings</a>.</div>
     <div class="status" id="status"></div>
     <div id="map"></div>
     <div id="results"></div>
@@ -257,10 +264,13 @@
         <button class="btn ghost" id="btnClearKey">Remove key</button>
       </div>
       <div class="status" id="keyStatus"></div>
+      <p class="note" id="persistState"></p>
     </div>
     <div class="card">
       <h2>Back up or share your shortlist</h2>
-      <p class="note">Your shortlist and recipe box are saved on this device only. Send a backup to another phone (like a family member's), or keep one somewhere safe. Your Google key is never included.</p>
+      <p class="note">Your shortlist and recipe box are saved on this device only. Send a backup to another phone (like a family member's), or keep one somewhere safe.</p>
+      <label class="chk"><input type="checkbox" id="bkKey"> Include my Google key in the backup</label>
+      <p class="note" id="bkKeyNote" style="margin-top:2px">Off: the key stays on this device. Turn on only when sending to your own or family phones, since anyone with the backup text can see the key.</p>
       <div class="row" style="margin-top:8px">
         <button class="btn" id="btnShareBackup">Send backup</button>
         <button class="btn ghost" id="btnCopyBackup">Copy backup</button>
@@ -1112,6 +1122,7 @@ $("#btnCopyChef").onclick = async e => { if (await copyText(CHEF)) flash(e.targe
 /* ---------------- backup & share ---------------- */
 function makeBackup(){
   const data = { v: 1, at: Date.now(), shortlist: shortlist(), recipes: store.get("recipes", {}), sites: store.get("recipeSites", null), extraTerms: store.get("extraTerms", "") };
+  if ($("#bkKey").checked && store.get("gkey", "")) data.gkey = store.get("gkey", "");
   return "SAFEPLATE1:" + btoa(unescape(encodeURIComponent(JSON.stringify(data))));
 }
 function readBackup(text){
@@ -1121,12 +1132,15 @@ function readBackup(text){
   if (!data || data.v !== 1 || typeof data.shortlist !== "object") throw new Error("This backup couldn't be read.");
   return data;
 }
+const backupEmpty = () => !Object.keys(shortlist()).length && !Object.keys(store.get("recipes", {})).length && !($("#bkKey").checked && store.get("gkey", ""));
+$("#bkKey").checked = store.get("bkKey", false);
+$("#bkKey").onchange = () => store.set("bkKey", $("#bkKey").checked);
 $("#btnCopyBackup").onclick = async e => {
-  if (!Object.keys(shortlist()).length){ flash(e.target, "Shortlist is empty"); return; }
+  if (backupEmpty()){ flash(e.target, "Nothing to back up"); return; }
   if (await copyText(makeBackup())) flash(e.target, "Copied ✓");
 };
 $("#btnShareBackup").onclick = async e => {
-  if (!Object.keys(shortlist()).length){ flash(e.target, "Shortlist is empty"); return; }
+  if (backupEmpty()){ flash(e.target, "Nothing to back up"); return; }
   const text = makeBackup();
   if (navigator.share){
     try{ await navigator.share({ title: "Safe Plate shortlist", text }); return; }
@@ -1153,8 +1167,10 @@ $("#btnRestore").onclick = () => {
     renderRecipeSites(); renderRecipes();
     if (rAdded) setTimeout(() => { st.textContent += ` ${rAdded} recipe${rAdded === 1 ? "" : "s"} added to your recipe box.`; }, 0);
     if (data.extraTerms && !store.get("extraTerms", "")){ store.set("extraTerms", data.extraTerms); $("#extraTerms").value = data.extraTerms; }
+    let keyMsg = "";
+    if (typeof data.gkey === "string" && /^AIza[\w-]{20,}$/.test(data.gkey)){ setKey(data.gkey); keyMsg = " Google key restored."; }
     st.classList.remove("err");
-    st.textContent = `Done: ${added} added, ${updated} updated with newer notes. Open the Shortlist tab to see them.`;
+    st.textContent = `Done: ${added} added, ${updated} updated with newer notes.${keyMsg} Open the Shortlist tab to see them.`;
     $("#restoreText").value = "";
   }catch(err){ st.classList.add("err"); st.textContent = err.message || "Couldn't read that backup."; }
 };
@@ -1163,12 +1179,36 @@ $("#btnRestore").onclick = () => {
 $("#gkey").value = store.get("gkey", "");
 function updateKeyNotice(){ $("#needKey").classList.toggle("hide", !!store.get("gkey", "")); }
 $("#goSettings").onclick = e => { e.preventDefault(); showView("settings"); };
+function setKey(k){
+  store.set("gkey", k); $("#gkey").value = k; updateKeyNotice(); askPersist();
+}
 $("#btnSaveKey").onclick = () => {
   const k = $("#gkey").value.trim();
-  store.set("gkey", k);
-  $("#keyStatus").textContent = k ? "Saved. Go to Find and tap Near me." : "No key entered.";
-  updateKeyNotice();
+  if (!k){ $("#keyStatus").textContent = "No key entered. (To delete the key, use Remove key.)"; return; }   // never wipe the key by accident
+  setKey(k);
+  $("#keyStatus").textContent = "Saved. Go to Find and tap Near me.";
 };
+async function saveQuickKey(k){
+  k = (k || "").trim();
+  if (!/^AIza[\w-]{20,}$/.test(k)){ flash($("#btnQuickSave"), "Not a key"); return; }
+  setKey(k); $("#quickKey").value = ""; setStatus("Key saved. Tap Near me or search a place.");
+}
+$("#btnQuickSave").onclick = () => saveQuickKey($("#quickKey").value);
+$("#quickKey").addEventListener("keydown", e => { if (e.key === "Enter") saveQuickKey($("#quickKey").value); });
+$("#btnPasteKey").onclick = async () => {
+  try{ const t = await navigator.clipboard.readText(); $("#quickKey").value = t.trim(); if (/^AIza/.test(t.trim())) saveQuickKey(t); }
+  catch(e){ $("#quickKey").focus(); flash($("#btnPasteKey"), "Long-press to paste"); }
+};
+// Ask the browser to keep this app's data (key, shortlist, recipes) instead of clearing it to free space
+async function askPersist(){
+  const el = $("#persistState");
+  try{
+    if (!navigator.storage || !navigator.storage.persist){ if (el) el.textContent = "This browser can't promise to keep saved data. Keep a backup."; return; }
+    let ok = await navigator.storage.persisted();
+    if (!ok) ok = await navigator.storage.persist();
+    if (el) el.textContent = ok ? "✓ This device will keep your key and saved data." : "This device may clear saved data when storage is low. Keep a backup with your key.";
+  }catch(e){ if (el) el.textContent = ""; }
+}
 $("#btnClearKey").onclick = () => { store.set("gkey", ""); $("#gkey").value = ""; $("#keyStatus").textContent = "Key removed."; updateKeyNotice(); };
 $("#extraTerms").value = store.get("extraTerms", "");
 $("#btnSaveTerms").onclick = e => { store.set("extraTerms", $("#extraTerms").value); flash(e.target, "Saved ✓"); };
@@ -1286,7 +1326,7 @@ $("#recipeList").addEventListener("input", e => {
 renderRecipeSites(); renderRecipes();
 
 /* ---------------- version & updates ---------------- */
-const APP_VERSION = "1.14";
+const APP_VERSION = "1.15";
 $("#appVersion").textContent = APP_VERSION;
 async function forceUpdate(){
   $("#updateState").textContent = "Updating…";
@@ -1314,6 +1354,7 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
 
 /* ---------------- init ---------------- */
 updateKeyNotice();
+askPersist();
 if ("serviceWorker" in navigator) window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
 </script>
 </body>
